@@ -9,8 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from PIL import Image
 from PIL.TiffImagePlugin import IFDRational
 
-from app.api.v1.endpoints.ingestion import get_storage_root
-from app.services.batch_processor import get_batch_processor
+from app.api.v1.endpoints.ingestion import get_processor, get_storage_root
 from app.main import app
 
 
@@ -56,7 +55,7 @@ async def test_create_batch_persists_files(tmp_path: Path) -> None:
     processor = RecordingBatchProcessor()
 
     app.dependency_overrides[get_storage_root] = lambda: storage_dir
-    app.dependency_overrides[get_batch_processor] = lambda: processor
+    app.dependency_overrides[get_processor] = lambda: processor
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         files = [
@@ -66,7 +65,7 @@ async def test_create_batch_persists_files(tmp_path: Path) -> None:
         response = await client.post("/api/v1/ingestion/batches", files=files)
 
     app.dependency_overrides.pop(get_storage_root, None)
-    app.dependency_overrides.pop(get_batch_processor, None)
+    app.dependency_overrides.pop(get_processor, None)
 
     assert response.status_code == status.HTTP_200_OK, response.text
     payload = response.json()
@@ -110,7 +109,7 @@ async def test_create_batch_extracts_metadata(tmp_path: Path) -> None:
     processor = RecordingBatchProcessor()
 
     app.dependency_overrides[get_storage_root] = lambda: storage_dir
-    app.dependency_overrides[get_batch_processor] = lambda: processor
+    app.dependency_overrides[get_processor] = lambda: processor
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         files = [
@@ -119,7 +118,7 @@ async def test_create_batch_extracts_metadata(tmp_path: Path) -> None:
         response = await client.post("/api/v1/ingestion/batches", files=files)
 
     app.dependency_overrides.pop(get_storage_root, None)
-    app.dependency_overrides.pop(get_batch_processor, None)
+    app.dependency_overrides.pop(get_processor, None)
 
     assert response.status_code == status.HTTP_200_OK
     file_info = response.json()["files"][0]

@@ -48,4 +48,17 @@ cd backend
 pytest
 ```
 
-Le test de santé (`/health`) vérifie que l’application démarre correctement. De nouveaux tests seront ajoutés à mesure que les services (ingestion, IA, rapport) s’implémentent.
+- Les tests existants couvrent l’endpoint `/health`, l’ingestion multi-fichiers et le pipeline IA de base.
+- Ajoutez vos fixtures/datasets dans `backend/tests/data/` si nécessaire.
+
+## Pipeline IA (MVP stub)
+
+Les composants OCR/Vision résident dans `app/pipelines/`. Lorsque `pytesseract` ou OpenCV ne sont pas disponibles, des heuristiques de repli renvoient néanmoins des observations structurées.
+
+Un script d’évaluation est fourni pour valider rapidement la boucle :
+
+```bash
+python backend/scripts/evaluate_pipeline.py --dataset data/samples
+```
+
+Le script parcourt un dossier local (images, PDF, textes) et affiche les observations et extraits OCR générés.

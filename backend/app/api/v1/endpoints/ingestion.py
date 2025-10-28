@@ -22,11 +22,15 @@ def get_storage_root() -> Path:
     return Path(settings.STORAGE_PATH)
 
 
+def get_processor(storage_root: Path = Depends(get_storage_root)) -> BatchProcessorProtocol:
+    return get_batch_processor(storage_root)
+
+
 @router.post("/batches", summary="Upload a batch of audit files", response_model=BatchResponse)
 async def create_batch(
     files: list[UploadFile],
     storage_root: Path = Depends(get_storage_root),
-    processor: BatchProcessorProtocol = Depends(get_batch_processor),
+    processor: BatchProcessorProtocol = Depends(get_processor),
 ) -> BatchResponse:
     if not files:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No files provided.")
