@@ -1,2 +1,30 @@
-# Fichiers temporaires de travail
-temp/
+# Backend
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+env/
+
+# Frontend
+node_modules/
+dist/
+.vite/
+.eslintcache
+
+# Infrastructure & tooling
+.env
+.env.*
+*.log
+*.sqlite3
+/tmp/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+docs/MVP_Issue_Backlog.md
