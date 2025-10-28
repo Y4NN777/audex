@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 
 from app.core.config import settings
 from app.schemas.ingestion import BatchResponse, FileMetadata
+from app.services.batch_processor import BatchProcessorProtocol, get_batch_processor
 from app.services.metadata import extract_image_metadata
 from app.services.storage import allowed_content_type, sanitize_filename, save_upload_file
 
@@ -25,6 +26,7 @@ def get_storage_root() -> Path:
 async def create_batch(
     files: list[UploadFile],
     storage_root: Path = Depends(get_storage_root),
+    processor: BatchProcessorProtocol = Depends(get_batch_processor),
 ) -> BatchResponse:
     if not files:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No files provided.")
@@ -59,5 +61,7 @@ async def create_batch(
                 metadata=metadata or None,
             )
         )
+
+    processor.enqueue(batch_id, stored_files)
 
     return BatchResponse(batch_id=batch_id, files=stored_files, stored_at=datetime.now(tz=timezone.utc))

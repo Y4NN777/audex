@@ -1,3 +1,5 @@
+SHELL := /bin/bash
+
 .PHONY: install test run lint
 
 install:
@@ -5,6 +7,9 @@ install:
 
 test:
 	pytest
+
+venv-activate:
+	source .venv/bin/activate
 
 run:
 	uvicorn app.main:app --reload --port 8000
