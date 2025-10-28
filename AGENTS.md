@@ -73,6 +73,8 @@ Un même membre peut occuper plusieurs rôles selon la capacité disponible.
    - Automatisation tests (pytest, Playwright/Cypress).
    - Scénario de présentation et check-list qualité.
 
+> Les issues prêtes à être intégrées dans l’outil de suivi sont détaillées dans `docs/MVP_Issue_Backlog.md`.
+
 ---
 
 ## 3. Cadence & rituels
