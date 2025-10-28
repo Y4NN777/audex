@@ -48,7 +48,7 @@ Le document `docs/Documentation Technique/Audex_Architecture_Technique_et_Concep
 ├── frontend/                      # UI React (Vite, TypeScript)
 ├── infrastructure/                # Dockerfiles, docker-compose
 ├── Makefile                       # Raccourcis (install, dev, docker-up/down)
-└── docs/MVP_Issue_Backlog.md      # Draft d’issues à porter dans le tracker
+└── README.md                      # Ce README    
 ```
 
 > **Note** : les dossiers applicatifs contiennent désormais un squelette fonctionnel (FastAPI + React) pour accélérer la construction du MVP.
