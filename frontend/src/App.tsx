@@ -16,7 +16,7 @@ function App() {
   const { submitFiles, uploading } = useBatchUploader({ online });
   const batches = useBatchesStore((state) => state.batches);
   const [syncing, setSyncing] = useState(false);
-  const { connected: eventsConnected } = useBatchEvents(online);
+  const { connected: eventsConnected, available: eventsAvailable } = useBatchEvents(online);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,6 +91,7 @@ function App() {
         pendingCount={pendingCount}
         syncing={syncing}
         eventsConnected={eventsConnected}
+        eventsAvailable={eventsAvailable}
         onSync={triggerSync}
       />
 

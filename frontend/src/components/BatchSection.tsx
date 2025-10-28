@@ -31,7 +31,12 @@ export function BatchSection({ title, batches, emptyMessage }: Props) {
                 <button
                   type="button"
                   className="link-button"
-                  onClick={() => void downloadReport(batch.id)}
+                  onClick={() =>
+                    downloadReport(batch.id, batch.report?.downloadUrl).catch((error) => {
+                      console.error("Download failed", error);
+                      alert("Impossible de télécharger le rapport pour le moment.");
+                    })
+                  }
                 >
                   Télécharger le rapport
                 </button>

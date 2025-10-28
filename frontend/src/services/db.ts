@@ -62,8 +62,10 @@ export async function deleteBatch(batchId: string): Promise<void> {
   await tx.objectStore(BATCH_STORE).delete(batchId);
   const fileStore = tx.objectStore(FILES_STORE);
   const index = fileStore.index("by-batch");
-  for await (const cursor of index.iterate(batchId)) {
+  let cursor = await index.openCursor(batchId);
+  while (cursor) {
     await cursor.delete();
+    cursor = await cursor.continue();
   }
   await tx.done;
 }
@@ -76,11 +78,15 @@ export async function loadBatches(): Promise<BatchSummary[]> {
 
 export async function loadFiles(batchId: string): Promise<File[]> {
   const db = await getDB();
-  const index = (await db).transaction(FILES_STORE).store.index("by-batch");
+  const tx = db.transaction(FILES_STORE, "readonly");
+  const index = tx.store.index("by-batch");
   const files: File[] = [];
-  for await (const cursor of index.iterate(batchId)) {
+  let cursor = await index.openCursor(batchId);
+  while (cursor) {
     files.push((cursor.value as FileRecord).file);
+    cursor = await cursor.continue();
   }
+  await tx.done;
   return files;
 }
 
