@@ -122,14 +122,16 @@ function App() {
         emptyMessage="Pas de lot en attente de synchronisation."
       />
 
-      <section className="card muted next-steps">
-        <h2>Prochaines étapes</h2>
-        <ol>
-          <li>Brancher le suivi d’analyse en temps réel (SSE/WebSocket).</li>
-          <li>Afficher les rapports PDF générés et leur statut de hachage.</li>
-          <li>Ajouter l’authentification et la gestion des rôles sur l’interface.</li>
-        </ol>
-      </section>
+      {syncedBatches.length === 0 && pendingBatches.length === 0 && (
+        <section className="card muted next-steps">
+          <h2>Prochaines étapes</h2>
+          <ol>
+            <li>Brancher le suivi d’analyse en temps réel (SSE/WebSocket).</li>
+            <li>Afficher les rapports PDF générés et leur statut de hachage.</li>
+            <li>Ajouter l’authentification et la gestion des rôles sur l’interface.</li>
+          </ol>
+        </section>
+      )}
     </div>
   );
 }
