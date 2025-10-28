@@ -90,6 +90,12 @@ export async function loadFiles(batchId: string): Promise<File[]> {
   return files;
 }
 
+export async function getBatch(batchId: string): Promise<BatchSummary | undefined> {
+  const db = await getDB();
+  const record = await db.get(BATCH_STORE, batchId);
+  return record as BatchRecord | undefined;
+}
+
 export function mapFilesMetadata(files: File[]): StoredFile[] {
   return files.map((file, index) => ({
     id: `${index}-${file.name}`,

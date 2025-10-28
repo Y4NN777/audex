@@ -203,6 +203,39 @@ ol {
   cursor: not-allowed;
 }
 
+.preview-list {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.75rem;
+  list-style: none;
+  padding: 0;
+}
+
+.preview-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 0.6rem 0.9rem;
+}
+
+.preview-item img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 0.5rem;
+  border: 1px solid #cbd5f5;
+}
+
+.file-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 0.5rem;
+  background: linear-gradient(135deg, #93c5fd, #6366f1);
+}
+
 .hint {
   font-size: 0.9rem;
   color: #64748b;
@@ -229,7 +262,7 @@ ol {
   padding: 1rem 1.25rem;
   background: #f8fafc;
   display: grid;
-  gap: 0.4rem;
+  gap: 0.6rem;
 }
 
 .batch-header {
@@ -274,4 +307,41 @@ ol {
 .card.muted {
   background: #f8fafc;
   border: 1px dashed #cbd5f5;
+}
+
+.file-preview-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.file-preview-list li {
+  background: #e2e8f0;
+  color: #1f2937;
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.batch-actions {
+  margin-top: 0.5rem;
+}
+
+.retry-button {
+  background: #1d4ed8;
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 0.35rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.retry-button:disabled {
+  background: #93c5fd;
+  cursor: wait;
 }

@@ -13,7 +13,7 @@ import { useBatchesStore } from "./state/useBatchesStore";
 function App() {
   const online = useOnlineStatus();
   const { setBatches } = useBatchesStore();
-  const { submitFiles, uploading } = useBatchUploader({ online });
+  const { submitFiles, retryBatch, uploading } = useBatchUploader({ online });
   const batches = useBatchesStore((state) => state.batches);
   const [syncing, setSyncing] = useState(false);
   const { connected: eventsConnected, available: eventsAvailable } = useBatchEvents(online);
@@ -114,12 +114,14 @@ function App() {
         title="Lots synchronisés"
         batches={syncedBatches}
         emptyMessage="Aucun lot n'a encore été envoyé."
+        onRetry={retryBatch}
       />
 
       <BatchSection
         title="Lots en attente"
         batches={pendingBatches}
         emptyMessage="Pas de lot en attente de synchronisation."
+        onRetry={retryBatch}
       />
 
       {syncedBatches.length === 0 && pendingBatches.length === 0 && (

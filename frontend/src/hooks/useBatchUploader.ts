@@ -1,12 +1,14 @@
 import { useCallback, useState } from "react";
 
-import { mapFilesMetadata, persistBatch, updateBatch, loadFiles, loadBatches } from "../services/db";
+import { mapFilesMetadata, persistBatch, updateBatch, loadFiles, loadBatches, getBatch } from "../services/db";
 import { api, parseApiError } from "../services/api";
 import { useBatchesStore } from "../state/useBatchesStore";
 import type { BatchStatus, BatchSummary } from "../types/batch";
+import { toFriendlyError } from "../utils/errors";
 
 type UploadResult = {
   submitFiles: (files: File[]) => Promise<void>;
+  retryBatch: (batchId: string) => Promise<void>;
   uploading: boolean;
 };
 
@@ -66,9 +68,10 @@ export function useBatchUploader({ online }: { online: boolean }): UploadResult 
         await updateBatch(updated);
       } catch (error) {
         const apiError = parseApiError(error);
+        const friendly = toFriendlyError(apiError.message, apiError.status);
         console.error("Upload error", apiError);
-        updateStatus(batch.id, "failed", { lastError: apiError.message });
-        await updateBatch({ ...batch, status: "failed", lastError: apiError.message });
+        updateStatus(batch.id, "failed", { lastError: friendly });
+        await updateBatch({ ...batch, status: "failed", lastError: friendly });
       } finally {
         setUploading(false);
       }
@@ -76,7 +79,28 @@ export function useBatchUploader({ online }: { online: boolean }): UploadResult 
     [online, upsertBatch, updateStatus]
   );
 
-  return { submitFiles, uploading };
+  const retryBatch = useCallback(
+    async (batchId: string) => {
+      const batch = await getBatch(batchId);
+      if (!batch) {
+        return;
+      }
+      try {
+        await uploadToServer(batch);
+        const updated: BatchSummary = { ...batch, status: "completed", lastError: undefined };
+        updateStatus(batch.id, "completed", { lastError: undefined });
+        await updateBatch(updated);
+      } catch (error) {
+        const apiError = parseApiError(error);
+        const friendly = toFriendlyError(apiError.message, apiError.status);
+        updateStatus(batch.id, "failed", { lastError: friendly });
+        await updateBatch({ ...batch, status: "failed", lastError: friendly });
+      }
+    },
+    [updateStatus]
+  );
+
+  return { submitFiles, retryBatch, uploading };
 }
 
 export async function synchronizePendingBatches(): Promise<BatchSummary[]> {
@@ -87,9 +111,14 @@ export async function synchronizePendingBatches(): Promise<BatchSummary[]> {
     try {
       await uploadToServer(batch);
       const updated: BatchSummary = { ...batch, status: "completed", lastError: undefined };
+      useBatchesStore.getState().updateStatus(batch.id, "completed", { lastError: undefined });
       await updateBatch(updated);
     } catch (error) {
-      console.error("Failed to synchronize batch", batch.id, parseApiError(error));
+      const apiError = parseApiError(error);
+      console.error("Failed to synchronize batch", batch.id, apiError);
+      const friendly = toFriendlyError(apiError.message, apiError.status);
+      useBatchesStore.getState().updateStatus(batch.id, "failed", { lastError: friendly });
+      await updateBatch({ ...batch, status: "failed", lastError: friendly });
     }
   }
 
