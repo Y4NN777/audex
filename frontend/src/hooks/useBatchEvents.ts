@@ -12,7 +12,7 @@ type BatchEventPayload = {
   reportUrl?: string;
 };
 
-const EVENTS_ENDPOINT = `${API_BASE_URL}/ingestion/events`;
+const EVENTS_ENDPOINT = `${API_BASE_URL}/api/v1/ingestion/events`;
 
 export function useBatchEvents(enabled: boolean) {
   const mergeBatch = useBatchesStore((state) => state.mergeBatch);

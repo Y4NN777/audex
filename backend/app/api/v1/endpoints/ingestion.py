@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import asyncio
 from pathlib import Path
 from typing import Iterable
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status, Request
+from starlette.responses import StreamingResponse
 
 from app.core.config import settings
 from app.schemas.ingestion import BatchResponse, FileMetadata
@@ -69,3 +71,16 @@ async def create_batch(
     processor.enqueue(batch_id, stored_files)
 
     return BatchResponse(batch_id=batch_id, files=stored_files, stored_at=datetime.now(tz=timezone.utc))
+
+
+async def _keepalive_stream(request: Request, interval: float = 15.0):
+    while True:
+        if await request.is_disconnected():
+            break
+        yield "event: keepalive\ndata: {}\n\n"
+        await asyncio.sleep(interval)
+
+
+@router.get("/events", summary="Server-sent events for ingestion status")
+async def ingestion_events(request: Request) -> StreamingResponse:
+    return StreamingResponse(_keepalive_stream(request), media_type="text/event-stream")
