@@ -44,10 +44,14 @@ Le document `docs/Documentation Technique/Audex_Architecture_Technique_et_Concep
 ├── docs/
 │   ├── Documentation General/     # Vision, SRS, PoC (PDF)
 │   └── Documentation Technique/   # Architecture, diagrammes
-└── README.md
+├── backend/                       # API FastAPI (pyproject, app/, tests/)
+├── frontend/                      # UI React (Vite, TypeScript)
+├── infrastructure/                # Dockerfiles, docker-compose
+├── Makefile                       # Raccourcis (install, dev, docker-up/down)
+└── docs/MVP_Issue_Backlog.md      # Draft d’issues à porter dans le tracker
 ```
 
-> **Note** : le code applicatif sera introduit dans des répertoires `frontend/`, `backend/` et `infrastructure/` lors des prochaines étapes.
+> **Note** : les dossiers applicatifs contiennent désormais un squelette fonctionnel (FastAPI + React) pour accélérer la construction du MVP.
 
 ---
 
@@ -58,13 +62,35 @@ Le document `docs/Documentation Technique/Audex_Architecture_Technique_et_Concep
 
 ---
 
-### Démarrage (prévisionnel)
-1. Préparer un environnement Python 3.11 et Node.js 20.
-2. Créer un `.env` backend contenant les secrets (JWT, clés blockchain).
-3. Lancer les services (scripts `make` ou `docker compose` seront fournis).
-4. Importer un jeu de test d’audit pour valider le pipeline de bout en bout.
+### Démarrage rapide
+1. **Backend**
+   ```bash
+   make install-backend
+   make dev-backend
+   ```
+   `make install-backend` crée automatiquement un virtualenv (`backend/.venv`) puis installe les dépendances. L’API tourne sur `http://localhost:8000` avec endpoint `/health` et docs Swagger (`/api/docs`).
 
-Les instructions précises seront ajoutées au fur et à mesure de l’implémentation.
+2. **Frontend**
+   ```bash
+   make install-frontend
+   make dev-frontend
+   ```
+   L’interface shell est servie sur `http://localhost:5173` et préfigure les écrans d’upload/suivi.
+
+3. **Docker (optionnel)**
+   ```bash
+   make docker-up
+   ```
+   Compose lance backend + frontend dans deux conteneurs. `make docker-down` pour arrêter.
+
+4. **Variables d’environnement**
+   - Copier `backend/.env.example` vers `backend/.env` et renseigner les secrets.
+   - Adapter `infrastructure/.env.example` pour définir ports/API URL et placeholders blockchain.
+
+5. **Prochaines étapes**
+   - Implémenter l’upload multi-fichiers et la validation (BACKEND-004, BACKEND-005).
+   - Brancher IndexedDB/offline et liaisons API côté React (FRONT-009, FRONT-010).
+   - Structurer le pipeline IA, scoring et génération de rapport (IA-006, IA-007, REPORT-008).
 
 ---
 
