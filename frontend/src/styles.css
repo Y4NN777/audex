@@ -173,18 +173,24 @@ ol {
 }
 
 .upload-panel .dropzone {
+  position: relative;
   border: 2px dashed #94a3b8;
-  padding: 2rem;
-  border-radius: 1rem;
+  border-radius: 1.5rem;
+  padding: 2.5rem;
+  background: linear-gradient(145deg, #f8fafc, #eff6ff);
+  transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease;
+}
+
+.dropzone-inner {
   display: grid;
-  gap: 0.75rem;
   justify-items: center;
-  background: #f8fafc;
-  transition: border-color 0.2s ease, background 0.2s ease;
+  gap: 0.75rem;
+  text-align: center;
 }
 
 .upload-panel.dragging .dropzone {
   border-color: #2563eb;
+  transform: scale(1.01);
   background: #e0f2fe;
 }
 
@@ -192,19 +198,55 @@ ol {
   background: #2563eb;
   color: #fff;
   border: none;
-  border-radius: 0.5rem;
-  padding: 0.6rem 1.1rem;
+  border-radius: 0.75rem;
+  padding: 0.75rem 1.4rem;
   font-weight: 600;
   cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.upload-panel button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 15px rgba(37, 99, 235, 0.25);
 }
 
 .upload-panel button:disabled {
   background: #94a3b8;
   cursor: not-allowed;
+  box-shadow: none;
+}
+
+.upload-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
+  background: linear-gradient(145deg, #60a5fa, #2563eb);
+  box-shadow: 0 10px 30px rgba(37, 99, 235, 0.25);
+}
+
+.dropzone-copy {
+  display: grid;
+  gap: 0.25rem;
+  color: #1e293b;
+}
+
+.preview-wrapper {
+  margin-top: 1rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
 }
 
 .preview-list {
-  margin-top: 1rem;
   display: grid;
   gap: 0.75rem;
   list-style: none;
@@ -214,11 +256,11 @@ ol {
 .preview-item {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.9rem;
   background: #f1f5f9;
   border: 1px solid #e2e8f0;
-  border-radius: 0.75rem;
-  padding: 0.6rem 0.9rem;
+  border-radius: 0.9rem;
+  padding: 0.8rem 1rem;
 }
 
 .preview-item img {
@@ -234,6 +276,66 @@ ol {
   height: 48px;
   border-radius: 0.5rem;
   background: linear-gradient(135deg, #93c5fd, #6366f1);
+}
+
+.preview-info {
+  flex: 1;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.preview-name {
+  margin: 0;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.preview-status {
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+}
+
+.preview-status.status-uploading {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.preview-status.status-success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.preview-status.status-error {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.progress-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+.progress-bar.status-uploading {
+  background: linear-gradient(90deg, #60a5fa, #2563eb);
+}
+
+.progress-bar.status-success {
+  background: #16a34a;
+}
+
+.progress-bar.status-error {
+  background: #b91c1c;
 }
 
 .hint {
