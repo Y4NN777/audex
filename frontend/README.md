@@ -6,14 +6,27 @@ Base React + Vite pour le MVP AUDEX. La structure est pensée pour accueillir ra
 
 ```
 src/
-  App.tsx         # Shell UI provisoire avec liste de lots
-  main.tsx        # Point d’entrée React
-  styles.css      # Style global minimal (à remplacer par design system)
-index.html        # Entrée Vite (monte <App /> dans #root)
+  App.tsx                # Shell principal (upload + historique + bannières)
+  main.tsx               # Point d’entrée React
+  styles.css             # Styles globaux
+  hooks/
+    useBatchUploader.ts  # Gestion upload + synchronisation offline
+    useOnlineStatus.ts   # Détection état réseau
+  services/
+    db.ts                # Abstraction IndexedDB (lots + fichiers)
+  state/
+    useBatchesStore.ts   # Store Zustand des lots
+  components/
+    UploadPanel.tsx      # UI de dépôt drag & drop
+    BatchList.tsx        # Historique des lots
+    ConnectionBanner.tsx # Notification offline/online
+  types/
+    batch.ts             # Types partagés (Batch, StoredFile)
+index.html               # Entrée Vite (monte <App /> dans #root)
 public/
-  favicon.svg     # Icône AUDEX
-package.json      # Scripts npm (dev/build/preview)
-tsconfig*.json    # Configuration TypeScript/Vite
+  favicon.svg            # Icône AUDEX
+package.json             # Scripts npm (dev/build/preview)
+tsconfig*.json           # Configuration TypeScript/Vite
 ```
 
 - Le projet est déclaré en mode ESM (`"type": "module"`) afin d’éviter les avertissements Vite sur l’API CJS obsolète.
@@ -26,10 +39,15 @@ npm install
 npm run dev
 ```
 
-L’application tourne sur `http://localhost:5173`. Le shell affiche des lots simulés et une checklist des prochaines étapes (upload multi-fichiers, liaison API, temps réel).
+L’application tourne sur `http://localhost:5173`.
+
+## Fonctionnalités actuelles
+- Dépôt multi-fichiers via drag & drop et bouton explorateur.
+- Stockage local des lots et fichiers dans IndexedDB (mode hors-ligne résilient).
+- Synchronisation automatique à la reconnexion (`/api/v1/ingestion/batches`).
+- Historique des lots avec statut, erreurs éventuelles et horodatage.
 
 ## Prochaines étapes clés
-- Ajouter la couche IndexedDB + synchronisation différée (React Query ou Zustand).
-- Implémenter le composant d’upload avec gestion offline/online.
-- Connecter l’API FastAPI (`/api/v1/ingestion/batches`) et gérer le suivi de pipeline.
-- Introduire un système de design (Tailwind, Mantine, MUI…) pour harmoniser l’interface.
+- Brancher un suivi temps réel (SSE/WebSocket) pour refléter l’analyse IA.
+- Afficher l’aperçu des rapports PDF générés et leur hachage blockchain.
+- Ajouter l’authentification/rôles côté client puis un design system homogène.

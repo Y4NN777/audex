@@ -1,49 +1,111 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-type BatchStub = {
-  id: string;
-  status: "pending" | "processing" | "completed";
-  files: number;
-};
-
-const demoBatches: BatchStub[] = [
-  { id: "batch-001", status: "completed", files: 5 },
-  { id: "batch-002", status: "processing", files: 3 }
-];
+import { ConnectionBanner } from "./components/ConnectionBanner";
+import { BatchSection } from "./components/BatchSection";
+import { SyncControls } from "./components/SyncControls";
+import { UploadPanel } from "./components/UploadPanel";
+import { useOnlineStatus } from "./hooks/useOnlineStatus";
+import { useBatchUploader, synchronizePendingBatches } from "./hooks/useBatchUploader";
+import { loadBatches } from "./services/db";
+import { useBatchesStore } from "./state/useBatchesStore";
 
 function App() {
-  const [batches] = useState(demoBatches);
-  const completed = useMemo(() => batches.filter((batch) => batch.status === "completed").length, [batches]);
+  const online = useOnlineStatus();
+  const { setBatches } = useBatchesStore();
+  const { submitFiles, uploading } = useBatchUploader({ online });
+  const batches = useBatchesStore((state) => state.batches);
+  const [syncing, setSyncing] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadBatches().then((items) => {
+      if (!cancelled) {
+        setBatches(items);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [setBatches]);
+
+  useEffect(() => {
+    if (!online) {
+      return;
+    }
+    let cancelled = false;
+    void synchronizePendingBatches().then((items) => {
+      if (!cancelled) {
+        setBatches(items);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [online, setBatches]);
+
+  const handleUpload = useCallback(async (files: File[]) => {
+    await submitFiles(files);
+    const items = online ? await synchronizePendingBatches() : await loadBatches();
+    setBatches(items);
+  }, [online, setBatches, submitFiles]);
+
+  const pendingBatches = useMemo(
+    () => batches.filter((batch) => batch.status === "pending" || batch.status === "failed" || batch.status === "uploading"),
+    [batches]
+  );
+  const syncedBatches = useMemo(
+    () => batches.filter((batch) => batch.status === "completed" || batch.status === "processing"),
+    [batches]
+  );
+
+  const pendingCount = pendingBatches.length;
+
+  const triggerSync = useCallback(async () => {
+    try {
+      setSyncing(true);
+      const items = await synchronizePendingBatches();
+      setBatches(items);
+    } finally {
+      setSyncing(false);
+    }
+  }, [setBatches]);
 
   return (
     <div className="app-shell">
       <header>
         <h1>AUDEX MVP Console</h1>
-        <p>Uploader vos audits, suivez le pipeline IA et récupérez le rapport final.</p>
+        <p>Déposez vos fichiers, suivez la synchronisation et consolidez vos audits en mode résilient.</p>
       </header>
 
-      <section className="card">
-        <h2>Lots récents</h2>
-        <p>
-          {completed} lot(s) complété(s) sur {batches.length}
-        </p>
-        <ul>
-          {batches.map((batch) => (
-            <li key={batch.id}>
-              <span>{batch.id}</span>
-              <span data-status={batch.status}>{batch.status}</span>
-              <span>{batch.files} fichiers</span>
-            </li>
-          ))}
-        </ul>
-      </section>
+      <ConnectionBanner
+        onBackOnline={async () => {
+          const items = await synchronizePendingBatches();
+          setBatches(items);
+        }}
+      />
 
-      <section className="card">
+      <SyncControls online={online} pendingCount={pendingCount} syncing={syncing} onSync={triggerSync} />
+
+      <UploadPanel onUpload={handleUpload} isUploading={uploading} online={online} />
+
+      <BatchSection
+        title="Lots synchronisés"
+        batches={syncedBatches}
+        emptyMessage="Aucun lot n'a encore été envoyé."
+      />
+
+      <BatchSection
+        title="Lots en attente"
+        batches={pendingBatches}
+        emptyMessage="Pas de lot en attente de synchronisation."
+      />
+
+      <section className="card muted next-steps">
         <h2>Prochaines étapes</h2>
         <ol>
-          <li>Implémenter l’upload multi-fichiers avec reprise hors-ligne.</li>
-          <li>Connecter l’API FastAPI `/api/v1/ingestion/batches`.</li>
-          <li>Afficher les statuts en temps réel via WebSocket/EventSource.</li>
+          <li>Brancher le suivi d’analyse en temps réel (SSE/WebSocket).</li>
+          <li>Afficher les rapports PDF générés et leur statut de hachage.</li>
+          <li>Ajouter l’authentification et la gestion des rôles sur l’interface.</li>
         </ol>
       </section>
     </div>

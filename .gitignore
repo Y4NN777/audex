@@ -14,7 +14,10 @@ dist/
 
 # Infrastructure & tooling
 .env
-.env.*
+.env.local
+.env.production
+.env.development
+.env.*.local
 *.log
 *.sqlite3
 /tmp/
