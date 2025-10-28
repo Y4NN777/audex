@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { toFriendlyError } from "../utils/errors";
+
 type Props = {
   onUpload: (files: File[]) => Promise<void>;
   isUploading: boolean;
@@ -10,15 +12,18 @@ export function UploadPanel({ onUpload, isUploading, online }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [previews, setPreviews] = useState<Array<{ id: string; file: File; url?: string }>>([]);
+  type PreviewItem = {
+    id: string;
+    file: File;
+    url?: string;
+    status: "ready" | "uploading" | "success" | "error";
+  };
+
+  const [previews, setPreviews] = useState<PreviewItem[]>([]);
 
   useEffect(() => {
     return () => {
-      previews.forEach((preview) => {
-        if (preview.url) {
-          URL.revokeObjectURL(preview.url);
-        }
-      });
+      previews.forEach((preview) => preview.url && URL.revokeObjectURL(preview.url));
     };
   }, [previews]);
 
@@ -35,14 +40,18 @@ export function UploadPanel({ onUpload, isUploading, online }: Props) {
       return files.map((file) => ({
         id: `${file.lastModified}-${file.name}`,
         file,
-        url: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined
+        url: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+        status: "ready"
       }));
     });
     try {
+      setPreviews((prev) => prev.map((preview) => ({ ...preview, status: "uploading" })));
       await onUpload(files);
-      setPreviews([]);
+      setPreviews((prev) => prev.map((preview) => ({ ...preview, status: "success" })));
     } catch (err) {
-      setError((err as Error).message ?? "Erreur lors de l'enregistrement des fichiers.");
+      setPreviews((prev) => prev.map((preview) => ({ ...preview, status: "error" })));
+      const friendly = toFriendlyError((err as Error)?.message);
+      setError(friendly);
     }
   };
 
@@ -54,6 +63,14 @@ export function UploadPanel({ onUpload, isUploading, online }: Props) {
 
   const handleBrowse = () => {
     inputRef.current?.click();
+  };
+
+  const clearPreviews = () => {
+    setPreviews((prev) => {
+      prev.forEach((preview) => preview.url && URL.revokeObjectURL(preview.url));
+      return [];
+    });
+    setError(null);
   };
 
   return (
@@ -89,20 +106,33 @@ export function UploadPanel({ onUpload, isUploading, online }: Props) {
         {error && <p className="error">{error}</p>}
       </div>
       {previews.length > 0 && (
-        <ul className="preview-list">
-          {previews.map((preview) => (
-            <li key={preview.id} className="preview-item">
-              {preview.url ? <img src={preview.url} alt={preview.file.name} /> : <span className="file-icon" />}
-              <div>
-                <p>{preview.file.name}</p>
-                <p className="muted-text subtle">{formatSize(preview.file.size)}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <div className="preview-wrapper">
+          <div className="preview-header">
+            <p className="muted-text subtle">Fichiers sélectionnés</p>
+            <button type="button" className="link-button" onClick={clearPreviews}>
+              Effacer
+            </button>
+          </div>
+          <ul className="preview-list">
+            {previews.map((preview) => (
+              <li key={preview.id} className={`preview-item status-${preview.status}`}>
+                {preview.url ? <img src={preview.url} alt={preview.file.name} /> : <span className="file-icon" />}
+                <div>
+                  <p>{preview.file.name}</p>
+                  <p className="muted-text subtle">{formatSize(preview.file.size)}</p>
+                </div>
+                <span className="preview-status">{renderStatusLabel(preview.status)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   );
+}
+
+function clearPreviews() {
+  // noop placeholder replaced during component scope
 }
 
 function formatSize(bytes: number): string {
@@ -113,4 +143,17 @@ function formatSize(bytes: number): string {
     return `${(bytes / 1024).toFixed(1)} Ko`;
   }
   return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
+}
+
+function renderStatusLabel(status: "ready" | "uploading" | "success" | "error") {
+  switch (status) {
+    case "uploading":
+      return "Envoi…";
+    case "success":
+      return "Transmis";
+    case "error":
+      return "Erreur";
+    default:
+      return "Prêt";
+  }
 }
