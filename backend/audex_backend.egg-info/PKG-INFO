@@ -45,6 +45,15 @@ make install-backend  # crée backend/.venv et installe les deps
 make dev-backend      # lance uvicorn via le virtualenv
 ```
 
+Depuis le dossier `backend/`, un `Makefile` local propose également :
+
+```bash
+cd backend
+source .venv/bin/activate  # activer l'environnement virtuel si nécessaire
+make test                  # lance pytest
+make run                   # démarre uvicorn en local
+```
+
 L’API est exposée sur `http://localhost:8000`. La documentation interactive est disponible sur `http://localhost:8000/api/docs`. Pour supprimer l’environnement virtuel créé automatiquement : `make clean-backend-venv`.
 
 ## Variables d’environnement

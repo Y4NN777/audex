@@ -13,6 +13,7 @@ app/models/__init__.py
 app/schemas/__init__.py
 app/schemas/ingestion.py
 app/services/__init__.py
+app/services/batch_processor.py
 app/services/metadata.py
 app/services/storage.py
 audex_backend.egg-info/PKG-INFO
