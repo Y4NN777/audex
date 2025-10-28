@@ -1,4 +1,5 @@
 import type { BatchSummary } from "../types/batch";
+import { downloadReport } from "../services/reports";
 
 type Props = {
   title: string;
@@ -25,6 +26,16 @@ export function BatchSection({ title, batches, emptyMessage }: Props) {
               </div>
               <p className="muted-text">{new Date(batch.createdAt).toLocaleString()}</p>
               <p className="muted-text">{batch.files.length} fichier(s)</p>
+              {batch.report?.hash && <p className="muted-text subtle">Hash SHA-256 : {batch.report.hash}</p>}
+              {batch.report?.downloadUrl && (
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => void downloadReport(batch.id)}
+                >
+                  Télécharger le rapport
+                </button>
+              )}
               {batch.lastError && <p className="error">{batch.lastError}</p>}
             </li>
           ))}

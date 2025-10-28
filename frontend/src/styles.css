@@ -103,6 +103,10 @@ header p {
   margin: 0;
 }
 
+.muted-text.subtle {
+  font-size: 0.85rem;
+}
+
 .sync-button {
   background: #0f172a;
   color: #fff;
@@ -117,6 +121,17 @@ header p {
 .sync-button:disabled {
   background: #94a3b8;
   cursor: not-allowed;
+}
+
+.link-button {
+  background: transparent;
+  color: #2563eb;
+  border: none;
+  padding: 0;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  width: fit-content;
 }
 
 ul {

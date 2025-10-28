@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 
 import { mapFilesMetadata, persistBatch, updateBatch, loadFiles, loadBatches } from "../services/db";
+import { api, parseApiError } from "../services/api";
 import { useBatchesStore } from "../state/useBatchesStore";
 import type { BatchStatus, BatchSummary } from "../types/batch";
 
@@ -9,19 +10,15 @@ type UploadResult = {
   uploading: boolean;
 };
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
-
-async function uploadToServer(batch: BatchSummary): Promise<Response> {
+async function uploadToServer(batch: BatchSummary): Promise<void> {
   const files = await loadFiles(batch.id);
   const formData = new FormData();
   files.forEach((file) => {
     formData.append("files", file, file.name);
   });
-  const response = await fetch(`${API_URL}/api/v1/ingestion/batches`, {
-    method: "POST",
-    body: formData
+  await api.post("/ingestion/batches", formData, {
+    headers: { "Content-Type": "multipart/form-data" }
   });
-  return response;
 }
 
 function createBatch(files: File[], status: BatchStatus): BatchSummary {
@@ -63,20 +60,15 @@ export function useBatchUploader({ online }: { online: boolean }): UploadResult 
 
       setUploading(true);
       try {
-        const response = await uploadToServer(batch);
-        if (!response.ok) {
-          const detail = await response.text();
-          updateStatus(batch.id, "failed", detail);
-          await updateBatch({ ...batch, status: "failed", lastError: detail });
-          return;
-        }
+        await uploadToServer(batch);
         const updated: BatchSummary = { ...batch, status: "completed" };
         updateStatus(batch.id, "completed");
         await updateBatch(updated);
       } catch (error) {
-        console.error("Upload error", error);
-        updateStatus(batch.id, "failed", (error as Error).message);
-        await updateBatch({ ...batch, status: "failed", lastError: (error as Error).message });
+        const apiError = parseApiError(error);
+        console.error("Upload error", apiError);
+        updateStatus(batch.id, "failed", { lastError: apiError.message });
+        await updateBatch({ ...batch, status: "failed", lastError: apiError.message });
       } finally {
         setUploading(false);
       }
@@ -93,14 +85,11 @@ export async function synchronizePendingBatches(): Promise<BatchSummary[]> {
 
   for (const batch of pending) {
     try {
-      const response = await uploadToServer(batch);
-      if (!response.ok) {
-        continue;
-      }
+      await uploadToServer(batch);
       const updated: BatchSummary = { ...batch, status: "completed", lastError: undefined };
       await updateBatch(updated);
     } catch (error) {
-      console.error("Failed to synchronize batch", batch.id, error);
+      console.error("Failed to synchronize batch", batch.id, parseApiError(error));
     }
   }
 

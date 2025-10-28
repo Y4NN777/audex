@@ -44,8 +44,9 @@ L’application tourne sur `http://localhost:5173`.
 ## Fonctionnalités actuelles
 - Dépôt multi-fichiers via drag & drop et bouton explorateur.
 - Stockage local des lots et fichiers dans IndexedDB (mode hors-ligne résilient).
-- Synchronisation automatique à la reconnexion (`/api/v1/ingestion/batches`).
-- Historique des lots avec statut, erreurs éventuelles et horodatage.
+- Synchronisation automatique à la reconnexion (`/api/v1/ingestion/batches`) + bouton manuel.
+- Abonnement SSE (`/api/v1/ingestion/events`) pour suivre les statuts en temps réel.
+- Historique des lots (séparé en synchronisés / en attente), téléchargement de rapport PDF et affichage du hash.
 
 ## Prochaines étapes clés
 - Brancher un suivi temps réel (SSE/WebSocket) pour refléter l’analyse IA.

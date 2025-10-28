@@ -6,6 +6,7 @@ import { SyncControls } from "./components/SyncControls";
 import { UploadPanel } from "./components/UploadPanel";
 import { useOnlineStatus } from "./hooks/useOnlineStatus";
 import { useBatchUploader, synchronizePendingBatches } from "./hooks/useBatchUploader";
+import { useBatchEvents } from "./hooks/useBatchEvents";
 import { loadBatches } from "./services/db";
 import { useBatchesStore } from "./state/useBatchesStore";
 
@@ -15,6 +16,7 @@ function App() {
   const { submitFiles, uploading } = useBatchUploader({ online });
   const batches = useBatchesStore((state) => state.batches);
   const [syncing, setSyncing] = useState(false);
+  const { connected: eventsConnected } = useBatchEvents(online);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,7 +86,13 @@ function App() {
         }}
       />
 
-      <SyncControls online={online} pendingCount={pendingCount} syncing={syncing} onSync={triggerSync} />
+      <SyncControls
+        online={online}
+        pendingCount={pendingCount}
+        syncing={syncing}
+        eventsConnected={eventsConnected}
+        onSync={triggerSync}
+      />
 
       <UploadPanel onUpload={handleUpload} isUploading={uploading} online={online} />
 

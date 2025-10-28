@@ -3,9 +3,10 @@ type Props = {
   pendingCount: number;
   syncing: boolean;
   onSync: () => Promise<void> | void;
+  eventsConnected: boolean;
 };
 
-export function SyncControls({ online, pendingCount, syncing, onSync }: Props) {
+export function SyncControls({ online, pendingCount, syncing, onSync, eventsConnected }: Props) {
   const hasPending = pendingCount > 0;
 
   return (
@@ -18,6 +19,9 @@ export function SyncControls({ online, pendingCount, syncing, onSync }: Props) {
             {hasPending
               ? `${pendingCount} lot(s) en attente de synchronisation`
               : "Toutes les données sont à jour"}
+          </p>
+          <p className="muted-text subtle">
+            Flux d'événements : {eventsConnected ? "connecté" : "déconnecté"}
           </p>
         </div>
       </div>

@@ -7,7 +7,8 @@ type BatchesState = {
   initialized: boolean;
   setBatches: (items: BatchSummary[]) => void;
   upsertBatch: (item: BatchSummary) => void;
-  updateStatus: (batchId: string, status: BatchStatus, lastError?: string) => void;
+  mergeBatch: (batchId: string, partial: Partial<BatchSummary>) => void;
+  updateStatus: (batchId: string, status: BatchStatus, options?: { lastError?: string; report?: BatchSummary["report"] }) => void;
 };
 
 export const useBatchesStore = create<BatchesState>((set) => ({
@@ -24,14 +25,19 @@ export const useBatchesStore = create<BatchesState>((set) => ({
       next.unshift(item);
       return { batches: next };
     }),
-  updateStatus: (batchId, status, lastError) =>
+  mergeBatch: (batchId, partial) =>
+    set((state) => ({
+      batches: state.batches.map((batch) => (batch.id === batchId ? { ...batch, ...partial } : batch))
+    })),
+  updateStatus: (batchId, status, options) =>
     set((state) => ({
       batches: state.batches.map((batch) =>
         batch.id === batchId
           ? {
               ...batch,
               status,
-              lastError
+              lastError: options?.lastError ?? batch.lastError,
+              report: options?.report ?? batch.report
             }
           : batch
       )
