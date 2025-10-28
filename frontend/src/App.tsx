@@ -35,11 +35,18 @@ function App() {
       return;
     }
     let cancelled = false;
-    void synchronizePendingBatches().then((items) => {
-      if (!cancelled) {
-        setBatches(items);
-      }
-    });
+    setSyncing(true);
+    void synchronizePendingBatches()
+      .then((items) => {
+        if (!cancelled) {
+          setBatches(items);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSyncing(false);
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -80,9 +87,15 @@ function App() {
       </header>
 
       <ConnectionBanner
+        syncing={syncing}
         onBackOnline={async () => {
-          const items = await synchronizePendingBatches();
-          setBatches(items);
+          setSyncing(true);
+          try {
+            const items = await synchronizePendingBatches();
+            setBatches(items);
+          } finally {
+            setSyncing(false);
+          }
         }}
       />
 
