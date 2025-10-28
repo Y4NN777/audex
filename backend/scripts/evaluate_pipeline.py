@@ -2,7 +2,7 @@
 """Quick evaluation harness for the AUDEX ingestion pipeline.
 
 Usage:
-    python backend/scripts/evaluate_pipeline.py --batch-id demo --dataset path/to/folder
+    python backend/scripts/evaluate_pipeline.py --batch-id demo --dataset path/to/folder [--report-dir reports]
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from pathlib import Path
 
 from app.schemas.ingestion import FileMetadata
 from app.services.pipeline import IngestionPipeline
+from app.services.report import ReportBuilder
 
 
 def build_metadata(dataset: Path) -> list[FileMetadata]:
@@ -44,6 +45,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate AUDEX ingestion pipeline on a dataset folder.")
     parser.add_argument("--batch-id", default="demo-batch")
     parser.add_argument("--dataset", required=True, type=Path, help="Directory containing sample files.")
+    parser.add_argument(
+        "--report-dir",
+        type=Path,
+        default=None,
+        help="Directory where the generated PDF should be stored (defaults to dataset folder).",
+    )
     args = parser.parse_args()
 
     if not args.dataset.exists():
@@ -65,6 +72,14 @@ def main() -> None:
         print(f" Total score: {result.risk.total_score} (normalized {result.risk.normalized_score})")
         for item in result.risk.breakdown:
             print(f"  - {item.label}/{item.severity}: count={item.count} score={item.score}")
+
+    output_dir = args.report_dir or args.dataset
+    builder = ReportBuilder(output_dir=output_dir)
+    artifact = builder.build_from_pipeline(result)
+
+    print("\nReport generated:")
+    print(f" Path: {artifact.path}")
+    print(f" SHA-256: {artifact.checksum_sha256}")
 
 
 if __name__ == "__main__":

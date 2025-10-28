@@ -53,7 +53,7 @@ pytest
 
 ## Pipeline IA (MVP stub)
 
-Les composants OCR/Vision résident dans `app/pipelines/`. Lorsque `pytesseract` ou OpenCV ne sont pas disponibles, des heuristiques de repli renvoient néanmoins des observations structurées. Un service de scoring (`app/services/scoring.py`) agrège ensuite les observations pour produire un score de risque normalisé.
+Les composants OCR/Vision résident dans `app/pipelines/`. Lorsque `pytesseract` ou OpenCV ne sont pas disponibles, des heuristiques de repli renvoient néanmoins des observations structurées. Un service de scoring (`app/services/scoring.py`) agrège ensuite les observations pour produire un score de risque normalisé. Enfin, `app/services/report.py` génère un PDF minimal (ReportLab) incluant le score et la liste des anomalies.
 
 Un script d’évaluation est fourni pour valider rapidement la boucle :
 
