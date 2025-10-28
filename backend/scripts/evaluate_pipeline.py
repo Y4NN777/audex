@@ -60,6 +60,11 @@ def main() -> None:
     for ocr in result.ocr_texts:
         snippet = (ocr.text[:120] + "...") if len(ocr.text) > 120 else ocr.text
         print(f" - {ocr.source_file}: {snippet}")
+    if result.risk:
+        print("\nRisk scoring:")
+        print(f" Total score: {result.risk.total_score} (normalized {result.risk.normalized_score})")
+        for item in result.risk.breakdown:
+            print(f"  - {item.label}/{item.severity}: count={item.count} score={item.score}")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -29,3 +31,20 @@ class PipelineResult:
     batch_id: str
     observations: list[Observation]
     ocr_texts: list[OCRResult]
+    risk: "RiskScore | None" = None
+
+
+@dataclass(slots=True)
+class RiskBreakdown:
+    label: str
+    severity: str
+    count: int
+    score: float
+
+
+@dataclass(slots=True)
+class RiskScore:
+    batch_id: str
+    total_score: float
+    normalized_score: float
+    breakdown: list[RiskBreakdown]
