@@ -37,17 +37,19 @@ export function SyncControls({
           </p>
         </div>
       </div>
-      <div className="sync-actions">
-        <button type="button" className="sync-button" onClick={() => void onSync()} disabled={!online || !hasPending || syncing}>
-          {syncing ? "Synchronisation…" : "Synchroniser"}
-        </button>
-        <button type="button" className="outline-button" onClick={() => void onBulkRetry()} disabled={!hasPending || syncing}>
-          Réessayer tout
-        </button>
-        <button type="button" className="ghost-button" onClick={() => void onClearPending()} disabled={!hasPending || syncing}>
-          Vider la liste
-        </button>
-      </div>
+      {hasPending && (
+        <div className="sync-actions">
+          <button type="button" className="sync-button" onClick={() => void onSync()} disabled={!online || syncing}>
+            {syncing ? "Synchronisation…" : "Synchroniser"}
+          </button>
+          <button type="button" className="outline-button" onClick={() => void onBulkRetry()} disabled={syncing}>
+            Réessayer tout
+          </button>
+          <button type="button" className="ghost-button" onClick={() => void onClearPending()} disabled={syncing}>
+            Vider la liste
+          </button>
+        </div>
+      )}
     </section>
   );
 }
