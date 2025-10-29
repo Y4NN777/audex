@@ -45,14 +45,14 @@ export function UploadPanel({ onUpload, isUploading, online }: Props) {
     setError(null);
 
     const nextPreviews: PreviewItem[] = files.map((file) => ({
-      id: `${file.lastModified}-${file.name}`,
+      id: `${Date.now()}-${file.name}`,
       file,
       url: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
       status: "uploading",
       progress: 0
     }));
 
-    replacePreviews(nextPreviews);
+    appendPreviews(nextPreviews);
     startProgress(nextPreviews.map((preview) => preview.id));
 
     try {
@@ -65,12 +65,8 @@ export function UploadPanel({ onUpload, isUploading, online }: Props) {
     }
   };
 
-  const replacePreviews = (items: PreviewItem[]) => {
-    clearAllTimers();
-    setPreviews((prev) => {
-      prev.forEach((preview) => preview.url && URL.revokeObjectURL(preview.url));
-      return items;
-    });
+  const appendPreviews = (items: PreviewItem[]) => {
+    setPreviews((prev) => [...items, ...prev]);
   };
 
   const startProgress = (ids: string[]) => {
@@ -172,8 +168,8 @@ export function UploadPanel({ onUpload, isUploading, online }: Props) {
       {previews.length > 0 && (
         <div className="preview-wrapper">
           <div className="preview-header">
-            <p className="muted-text subtle">Fichiers sélectionnés</p>
-            <button type="button" className="link-button" onClick={clearPreviews}>
+            <p className="muted-text subtle">Fichiers sélectionnés (session en cours)</p>
+            <button type="button" className="pill-button" onClick={clearPreviews}>
               Effacer
             </button>
           </div>

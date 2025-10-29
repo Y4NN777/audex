@@ -240,6 +240,15 @@ ol {
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
 }
 
+.preview-wrapper {
+  margin: 1.5rem 0;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+}
+
 .preview-header {
   display: flex;
   justify-content: space-between;
@@ -252,6 +261,16 @@ ol {
   gap: 0.75rem;
   list-style: none;
   padding: 0;
+}
+
+.pill-button {
+  background: rgba(30, 64, 175, 0.1);
+  color: #1e3a8a;
+  border: none;
+  border-radius: 999px;
+  padding: 0.25rem 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .preview-item {
