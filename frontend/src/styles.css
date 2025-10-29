@@ -36,6 +36,64 @@ header p {
   color: #4b5563;
 }
 
+.stats-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.stats-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: linear-gradient(135deg, #f8fafc, #eef2ff);
+  padding: 1.1rem 1.35rem;
+  border-radius: 1.1rem;
+  border: 1px solid #e0e7ff;
+  box-shadow: 0 12px 35px rgba(15, 23, 42, 0.08);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.stats-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 38px rgba(15, 23, 42, 0.12);
+}
+
+.stats-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(79, 70, 229, 0.12);
+  color: #3730a3;
+  display: grid;
+  place-items: center;
+}
+
+.stats-copy {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.stats-value {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.stats-label {
+  margin: 0;
+  color: #475569;
+  font-weight: 600;
+}
+
+.stats-caption {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
 .section-header {
   display: flex;
   justify-content: space-between;

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { BatchSection } from "./components/BatchSection";
+import { StatsStrip, buildStats } from "./components/StatsStrip";
 import { SyncControls } from "./components/SyncControls";
 import { UploadPanel } from "./components/UploadPanel";
 import { useOnlineStatus } from "./hooks/useOnlineStatus";
@@ -69,6 +70,21 @@ function App() {
 
   const pendingCount = pendingBatches.length;
 
+  const stats = useMemo(() => {
+    const totalFiles = batches.reduce((total, batch) => total + batch.files.length, 0);
+    const totalSizeBytes = batches.reduce(
+      (total, batch) => total + batch.files.reduce((sum, file) => sum + file.size, 0),
+      0
+    );
+
+    return buildStats({
+      totalBatches: batches.length,
+      pending: pendingCount,
+      totalFiles,
+      totalSize: formatBytes(totalSizeBytes)
+    });
+  }, [batches, pendingCount]);
+
   const triggerSync = useCallback(async () => {
     try {
       setSyncing(true);
@@ -98,6 +114,8 @@ function App() {
           }
         }}
       />
+
+      <StatsStrip stats={stats} />
 
       <SyncControls
         online={online}
@@ -139,3 +157,11 @@ function App() {
 }
 
 export default App;
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 o";
+  const units = ["o", "Ko", "Mo", "Go", "To"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  const value = bytes / Math.pow(1024, i);
+  return `${value.toFixed(value < 10 ? 1 : 0)} ${units[i]}`;
+}
