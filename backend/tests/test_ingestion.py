@@ -9,6 +9,7 @@ from fastapi import status
 from httpx import ASGITransport, AsyncClient
 from PIL import Image
 from PIL.TiffImagePlugin import IFDRational
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 
@@ -150,6 +151,38 @@ async def test_create_batch_persists_files(tmp_path: Path, isolated_session: Non
 
 
 @pytest.mark.asyncio
+async def test_get_batch_returns_persisted_metadata_and_timeline(tmp_path: Path, isolated_session: None) -> None:
+    storage_dir = tmp_path / "uploads"
+    processor = RecordingBatchProcessor()
+
+    app.dependency_overrides[get_storage_root] = lambda: storage_dir
+    app.dependency_overrides[get_processor] = lambda: processor
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        files = [
+            ("files", ("exif.jpg", _make_image_with_exif(), "image/jpeg")),
+            ("files", ("notes.txt", b"note", "text/plain")),
+        ]
+        create_response = await client.post("/api/v1/ingestion/batches", files=files)
+        batch_id = create_response.json()["batch_id"]
+
+        detail_response = await client.get(f"/api/v1/ingestion/batches/{batch_id}")
+
+    app.dependency_overrides.pop(get_storage_root, None)
+    app.dependency_overrides.pop(get_processor, None)
+
+    assert detail_response.status_code == status.HTTP_200_OK, detail_response.text
+    detail = detail_response.json()
+    assert detail["status"] == "completed"
+    assert {file["filename"] for file in detail["files"]} == {"exif.jpg", "notes.txt"}
+    exif_entry = next(file for file in detail["files"] if file["filename"] == "exif.jpg")
+    assert exif_entry["metadata"] is not None
+    codes = [event["code"] for event in detail["timeline"]]
+    assert "ingestion:received" in codes
+    assert "report:available" in codes
+
+
+@pytest.mark.asyncio
 async def test_create_batch_rejects_unsupported_content_type(tmp_path: Path, isolated_session: None) -> None:
     storage_dir = tmp_path / "uploads"
     app.dependency_overrides[get_storage_root] = lambda: storage_dir
@@ -191,7 +224,7 @@ async def test_create_batch_extracts_metadata(tmp_path: Path, isolated_session: 
     gps = metadata["gps"]
     assert pytest.approx(gps["latitude"], 0.01) == 12.5666  # approx 12 deg 34 min
     assert pytest.approx(gps["longitude"], 0.01) == 56.1166
-@pytest.fixture
+@pytest_asyncio.fixture
 async def isolated_session(tmp_path: Path):
     database_url = f"sqlite+aiosqlite:///{(tmp_path / 'test.db').as_posix()}"
     engine = create_async_engine(database_url, future=True)

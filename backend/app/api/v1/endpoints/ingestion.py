@@ -12,8 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.session import get_session
+from app.models import AuditBatch
 from app.repositories import batches as batch_repo
-from app.schemas.ingestion import BatchResponse, FileMetadata
+from app.schemas.ingestion import BatchResponse, FileMetadata, ProcessingEventSchema
 from app.services.batch_processor import BatchProcessorProtocol, get_batch_processor
 from app.services.events import event_bus
 from app.services.metadata import extract_image_metadata
@@ -238,15 +239,11 @@ async def create_batch(
                 "stage": final_stage,
             }
         )
-        return BatchResponse(
-            batch_id=batch_id,
-            files=stored_files,
-            stored_at=created_at,
-            status="completed",
-            report_hash=artifact.checksum_sha256,
-            report_url=report_path_fragment,
-            timeline=timeline_events,
-        )
+        await persist_events()
+        batch = await batch_repo.get_batch(session, batch_id)
+        if not batch:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+        return _serialize_batch(batch)
     except Exception as exc:  # noqa: BLE001
         await batch_repo.update_batch(session, batch_id, status="failed", last_error=str(exc))
         error_stage = build_stage(
@@ -263,6 +260,7 @@ async def create_batch(
                 "stage": error_stage,
             }
         )
+        await persist_events()
         raise HTTPException(status_code=500, detail="Batch processing failed") from exc
     finally:
         await persist_events()
@@ -289,6 +287,14 @@ async def ingestion_events(request: Request) -> StreamingResponse:
     return StreamingResponse(_event_stream(request, queue), media_type="text/event-stream")
 
 
+@router.get("/batches/{batch_id}", summary="Récupérer un lot et sa timeline", response_model=BatchResponse)
+async def read_batch(batch_id: str, session: AsyncSession = Depends(get_session)) -> BatchResponse:
+    batch = await batch_repo.get_batch(session, batch_id)
+    if not batch:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+    return _serialize_batch(batch)
+
+
 @router.get("/reports/{batch_id}", summary="Télécharger le rapport généré")
 async def download_report(batch_id: str, session: AsyncSession = Depends(get_session)) -> FileResponse:
     record = await batch_repo.get_batch(session, batch_id)
@@ -299,3 +305,41 @@ async def download_report(batch_id: str, session: AsyncSession = Depends(get_ses
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
     filename = report_path.name
     return FileResponse(report_path, media_type="application/pdf", filename=filename)
+
+
+def _serialize_batch(batch: AuditBatch) -> BatchResponse:
+    files = [
+        FileMetadata(
+            filename=file.filename,
+            content_type=file.content_type,
+            size_bytes=file.size_bytes,
+            checksum_sha256=file.checksum_sha256,
+            stored_path=file.stored_path,
+            metadata=file.metadata_json,
+        )
+        for file in batch.files
+    ]
+    timeline = [
+        ProcessingEventSchema(
+            code=event.code,
+            label=event.label,
+            kind=event.kind,
+            timestamp=event.timestamp,
+            progress=event.progress,
+            details=event.details,
+        )
+        for event in batch.events
+    ]
+    report_url = None
+    if batch.report_path:
+        report_url = f"{settings.API_V1_PREFIX}/ingestion/reports/{batch.id}"
+    return BatchResponse(
+        batch_id=batch.id,
+        files=files,
+        stored_at=batch.created_at,
+        status=batch.status,
+        report_hash=batch.report_hash,
+        report_url=report_url,
+        last_error=batch.last_error,
+        timeline=timeline,
+    )

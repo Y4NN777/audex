@@ -13,6 +13,15 @@ class FileMetadata(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
+class ProcessingEventSchema(BaseModel):
+    code: str
+    label: str
+    kind: str
+    timestamp: datetime
+    progress: int | None = None
+    details: dict[str, Any] | None = None
+
+
 class BatchResponse(BaseModel):
     batch_id: str = Field(..., description="Unique identifier of the stored batch.")
     files: list[FileMetadata]
@@ -20,4 +29,5 @@ class BatchResponse(BaseModel):
     status: str = Field(..., description="Current status of the batch processing.")
     report_hash: str | None = None
     report_url: str | None = None
-    timeline: list[dict[str, Any]] | None = None
+    last_error: str | None = None
+    timeline: list[ProcessingEventSchema] | None = None
