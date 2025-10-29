@@ -17,3 +17,5 @@ class BatchResponse(BaseModel):
     batch_id: str = Field(..., description="Unique identifier of the stored batch.")
     files: list[FileMetadata]
     stored_at: datetime
+    status: str = Field(..., description="Current status of the batch processing.")
+    report_hash: str | None = None

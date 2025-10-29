@@ -22,7 +22,8 @@ class LocalPipelineBatchProcessor(BatchProcessorProtocol):
         self.pipeline = IngestionPipeline(self.storage_root)
 
     def enqueue(self, batch_id: str, files: Iterable[FileMetadata]) -> None:
-        self.pipeline.run(batch_id, list(files))
+        # Placeholder for async orchestration (handled directly in ingestion endpoint for now)
+        return None
 
 
 def get_batch_processor(storage_root: Path) -> BatchProcessorProtocol:
