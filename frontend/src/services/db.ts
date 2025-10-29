@@ -96,6 +96,17 @@ export async function getBatch(batchId: string): Promise<BatchSummary | undefine
   return record as BatchRecord | undefined;
 }
 
+export async function mergeBatchRecord(batchId: string, partial: Partial<BatchSummary>): Promise<BatchSummary | undefined> {
+  const db = await getDB();
+  const record = (await db.get(BATCH_STORE, batchId)) as BatchRecord | undefined;
+  if (!record) {
+    return undefined;
+  }
+  const updated: BatchRecord = { ...record, ...partial } as BatchRecord;
+  await db.put(BATCH_STORE, updated);
+  return updated;
+}
+
 export function mapFilesMetadata(files: File[]): StoredFile[] {
   return files.map((file, index) => ({
     id: `${index}-${file.name}`,

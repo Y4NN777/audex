@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { API_BASE_URL } from "../services/api";
+import { mergeBatchRecord } from "../services/db";
 import { useBatchesStore } from "../state/useBatchesStore";
 import type { BatchStatus, BatchSummary } from "../types/batch";
 
@@ -17,7 +18,7 @@ const EVENTS_ENDPOINT = `${API_BASE_URL}/api/v1/ingestion/events`;
 export function useBatchEvents(enabled: boolean) {
   const mergeBatch = useBatchesStore((state) => state.mergeBatch);
   const [connected, setConnected] = useState(false);
-   const [available, setAvailable] = useState(true);
+  const [available, setAvailable] = useState(true);
   const sourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
@@ -49,7 +50,7 @@ export function useBatchEvents(enabled: boolean) {
       }
     };
 
-    eventSource.onmessage = (event) => {
+    eventSource.onmessage = async (event) => {
       try {
         const payload = JSON.parse(event.data) as BatchEventPayload;
         if (!payload.batchId) return;
@@ -70,6 +71,7 @@ export function useBatchEvents(enabled: boolean) {
 
         if (Object.keys(updates).length > 0) {
           mergeBatch(payload.batchId, updates);
+          await mergeBatchRecord(payload.batchId, updates);
         }
       } catch (error) {
         console.error("Failed to parse batch event", error);

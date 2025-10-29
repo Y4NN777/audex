@@ -1,6 +1,15 @@
 import { useCallback, useState } from "react";
 
-import { mapFilesMetadata, persistBatch, updateBatch, loadFiles, loadBatches, getBatch, deleteBatch } from "../services/db";
+import {
+  mapFilesMetadata,
+  persistBatch,
+  updateBatch,
+  loadFiles,
+  loadBatches,
+  getBatch,
+  deleteBatch,
+  mergeBatchRecord
+} from "../services/db";
 import { api, parseApiError } from "../services/api";
 import { useBatchesStore } from "../state/useBatchesStore";
 import type { BatchStatus, BatchSummary } from "../types/batch";
@@ -13,15 +22,23 @@ type UploadResult = {
   uploading: boolean;
 };
 
-async function uploadToServer(batch: BatchSummary): Promise<void> {
+type UploadResponse = {
+  batch_id: string;
+  status: BatchStatus;
+  report_hash?: string | null;
+  stored_at: string;
+};
+
+async function uploadToServer(batch: BatchSummary): Promise<UploadResponse> {
   const files = await loadFiles(batch.id);
   const formData = new FormData();
   files.forEach((file) => {
     formData.append("files", file, file.name);
   });
-  await api.post("/ingestion/batches", formData, {
+  const response = await api.post("/ingestion/batches", formData, {
     headers: { "Content-Type": "multipart/form-data" }
   });
+  return response.data as UploadResponse;
 }
 
 function createBatch(files: File[], status: BatchStatus): BatchSummary {
@@ -39,6 +56,14 @@ function createBatch(files: File[], status: BatchStatus): BatchSummary {
 export function useBatchUploader({ online }: { online: boolean }): UploadResult {
   const { upsertBatch, updateStatus, mergeBatch, removeBatch: removeFromStore } = useBatchesStore();
   const [uploading, setUploading] = useState(false);
+
+  const mergePersisted = useCallback(
+    async (batchId: string, partial: Partial<BatchSummary>) => {
+      mergeBatch(batchId, partial);
+      await mergeBatchRecord(batchId, partial);
+    },
+    [mergeBatch]
+  );
 
   const submitFiles = useCallback(
     async (files: File[]) => {
@@ -63,21 +88,30 @@ export function useBatchUploader({ online }: { online: boolean }): UploadResult 
 
       setUploading(true);
       try {
-        await uploadToServer(batch);
-        const updated: BatchSummary = { ...batch, status: "completed" };
-        updateStatus(batch.id, "completed");
-        await updateBatch(updated);
+        updateStatus(batch.id, "processing");
+        await mergePersisted(batch.id, { status: "processing" });
+
+        const response = await uploadToServer(batch);
+        const normalizedStatus = response.status as BatchStatus;
+        const report = response.report_hash
+          ? {
+              hash: response.report_hash,
+              downloadUrl: `/api/v1/ingestion/reports/${batch.id}`
+            }
+          : undefined;
+        updateStatus(batch.id, normalizedStatus, { lastError: undefined, report });
+        await mergePersisted(batch.id, { status: normalizedStatus, lastError: undefined, report });
       } catch (error) {
         const apiError = parseApiError(error);
         const friendly = toFriendlyError(apiError.message, apiError.status);
         console.error("Upload error", apiError);
         updateStatus(batch.id, "failed", { lastError: friendly });
-        await updateBatch({ ...batch, status: "failed", lastError: friendly });
+        await mergePersisted(batch.id, { status: "failed", lastError: friendly });
       } finally {
         setUploading(false);
       }
     },
-    [online, upsertBatch, updateStatus]
+    [online, upsertBatch, updateStatus, mergePersisted]
   );
 
   const retryBatch = useCallback(
@@ -87,18 +121,27 @@ export function useBatchUploader({ online }: { online: boolean }): UploadResult 
         return;
       }
       try {
-        await uploadToServer(batch);
-        const updated: BatchSummary = { ...batch, status: "completed", lastError: undefined };
-        updateStatus(batch.id, "completed", { lastError: undefined });
-        await updateBatch(updated);
+        updateStatus(batch.id, "processing");
+        await mergePersisted(batch.id, { status: "processing" });
+
+        const response = await uploadToServer(batch);
+        const normalizedStatus = response.status as BatchStatus;
+        const report = response.report_hash
+          ? {
+              hash: response.report_hash,
+              downloadUrl: `/api/v1/ingestion/reports/${batch.id}`
+            }
+          : undefined;
+        updateStatus(batch.id, normalizedStatus, { lastError: undefined, report });
+        await mergePersisted(batch.id, { status: normalizedStatus, lastError: undefined, report });
       } catch (error) {
         const apiError = parseApiError(error);
         const friendly = toFriendlyError(apiError.message, apiError.status);
         updateStatus(batch.id, "failed", { lastError: friendly });
-        await updateBatch({ ...batch, status: "failed", lastError: friendly });
+        await mergePersisted(batch.id, { status: "failed", lastError: friendly });
       }
     },
-    [updateStatus]
+    [updateStatus, mergePersisted]
   );
 
   const removeBatch = useCallback(
@@ -118,16 +161,25 @@ export async function synchronizePendingBatches(): Promise<BatchSummary[]> {
 
   for (const batch of pending) {
     try {
-      await uploadToServer(batch);
-      const updated: BatchSummary = { ...batch, status: "completed", lastError: undefined };
-      useBatchesStore.getState().updateStatus(batch.id, "completed", { lastError: undefined });
-      await updateBatch(updated);
+      useBatchesStore.getState().updateStatus(batch.id, "processing");
+      await mergeBatchRecord(batch.id, { status: "processing" });
+
+      const response = await uploadToServer(batch);
+      const normalizedStatus = response.status as BatchStatus;
+      const report = response.report_hash
+        ? {
+            hash: response.report_hash,
+            downloadUrl: `/api/v1/ingestion/reports/${batch.id}`
+          }
+        : undefined;
+      useBatchesStore.getState().updateStatus(batch.id, normalizedStatus, { lastError: undefined, report });
+      await mergeBatchRecord(batch.id, { status: normalizedStatus, lastError: undefined, report });
     } catch (error) {
       const apiError = parseApiError(error);
       console.error("Failed to synchronize batch", batch.id, apiError);
       const friendly = toFriendlyError(apiError.message, apiError.status);
       useBatchesStore.getState().updateStatus(batch.id, "failed", { lastError: friendly });
-      await updateBatch({ ...batch, status: "failed", lastError: friendly });
+      await mergeBatchRecord(batch.id, { status: "failed", lastError: friendly });
     }
   }
 
