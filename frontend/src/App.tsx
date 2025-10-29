@@ -163,11 +163,11 @@ function App() {
 
       {syncedBatches.length === 0 && pendingBatches.length === 0 && (
         <section className="card muted next-steps">
-          <h2>Prochaines étapes</h2>
+          <h2>Comment tester le flux d’analyse</h2>
           <ol>
-            <li>Brancher le suivi d’analyse en temps réel (SSE/WebSocket).</li>
-            <li>Afficher les rapports PDF générés et leur statut de hachage.</li>
-            <li>Ajouter l’authentification et la gestion des rôles sur l’interface.</li>
+            <li>Déposez un lot de fichiers pour lancer automatiquement l’analyse.</li>
+            <li>Regardez la chronologie : chaque étape s’affiche en direct pendant le traitement.</li>
+            <li>Téléchargez le PDF généré et notez le code d’intégrité (hash) pour vérification ultérieure.</li>
           </ol>
         </section>
       )}

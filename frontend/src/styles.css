@@ -198,6 +198,232 @@ header p {
   cursor: pointer;
 }
 
+.report-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(37, 99, 235, 0.05));
+  border: 1px solid rgba(59, 130, 246, 0.15);
+  border-radius: 0.9rem;
+  padding: 1rem 1.2rem;
+  margin: 1rem 0 0;
+}
+
+.report-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  display: grid;
+  place-items: center;
+}
+
+.report-content {
+  flex: 1;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.report-title {
+  margin: 0;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.report-hash {
+  margin: 0;
+  color: #475569;
+  font-size: 0.9rem;
+}
+
+.report-hash code {
+  background: rgba(15, 23, 42, 0.06);
+  border-radius: 6px;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.8rem;
+}
+
+.report-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.report-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+  font-weight: 600;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+}
+
+.batch-timeline {
+  margin-top: 1.5rem;
+}
+
+.timeline-title {
+  margin: 0 0 0.75rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.batch-timeline ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.timeline-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.75rem 0;
+  position: relative;
+}
+
+.timeline-item:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: calc(50% + 12px);
+  bottom: -12px;
+  width: 1px;
+  background: #e2e8f0;
+}
+
+.timeline-item-active .timeline-label {
+  color: #1d4ed8;
+}
+
+.timeline-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.timeline-icon.icon-info {
+  background: #2563eb;
+}
+
+.timeline-icon.icon-success {
+  background: #047857;
+}
+
+.timeline-icon.icon-warning {
+  background: #f59e0b;
+}
+
+.timeline-icon.icon-error {
+  background: #dc2626;
+}
+
+.timeline-content {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.timeline-label {
+  margin: 0;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.timeline-meta {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.timeline-detail {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.toast-container {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  z-index: 9999;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: #0f172a;
+  color: #fff;
+  padding: 0.85rem 1.1rem;
+  border-radius: 0.8rem;
+  min-width: 260px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.25);
+}
+
+.toast button {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 1.1rem;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.toast-success {
+  background: #047857;
+}
+
+.toast-error {
+  background: #b91c1c;
+}
+
+.toast-info {
+  background: #1d4ed8;
+}
+
+.progress-card {
+  margin: 1rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 10px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #60a5fa, #2563eb);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.progress-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1f2937;
+  min-width: 3rem;
+  text-align: right;
+}
+
 .outline-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
