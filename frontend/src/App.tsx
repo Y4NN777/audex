@@ -114,8 +114,8 @@ function App() {
   return (
     <div className="app-shell">
       <header>
-        <h1>AUDEX MVP Console</h1>
-        <p>Déposez vos fichiers, suivez la synchronisation et consolidez vos audits en mode résilient.</p>
+        <h1>AUDEX shell</h1>
+        <p>Déposez vos fichiers meme sans internet, suivez la synchronisation et consolidez vos audits en mode résilient une fois en ligne.</p>
       </header>
 
       <ConnectionBanner
