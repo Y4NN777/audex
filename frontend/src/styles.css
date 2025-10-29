@@ -424,6 +424,70 @@ header p {
   text-align: right;
 }
 
+.stepper {
+  display: grid;
+  gap: 0.9rem;
+  margin: 1.25rem 0 1rem;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 0.9rem;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.step.done {
+  border-color: rgba(16, 185, 129, 0.5);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.step.current {
+  border-color: rgba(59, 130, 246, 0.6);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.step-marker {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
+}
+
+.step.done .step-marker {
+  background: linear-gradient(135deg, #10b981, #34d399);
+}
+
+.step.pending .step-marker {
+  background: #cbd5f5;
+  color: #475569;
+}
+
+.step-info {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.step-title {
+  margin: 0;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.step-caption {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
 .outline-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;

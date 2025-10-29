@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any, Callable, Iterable, List
 
@@ -41,15 +42,17 @@ class IngestionPipeline:
 
         for index, file_meta in enumerate(file_list, start=1):
             if progress:
-                per_file_progress = 30 + int(40 * min(max(index / max(total_files, 1), 0.0), 1.0))
+                ratio = min(max(index / max(total_files, 1), 0.0), 1.0)
+                vision_progress = 30 + int(15 * ratio)
+                ocr_progress = 50 + int(15 * ratio)
                 progress(
-                    "analysis:file",
+                    "vision:start",
                     {
-                        "label": f"Traitement de {file_meta.filename}",
+                        "label": f"Analyse visuelle de {file_meta.filename}",
                         "file": file_meta.filename,
                         "position": index,
                         "total": total_files,
-                        "progress": per_file_progress,
+                        "progress": max(25, vision_progress - 5),
                     },
                 )
 
@@ -58,6 +61,27 @@ class IngestionPipeline:
             if file_meta.content_type.startswith("image/"):
                 observations.extend(detect_anomalies(path))
                 ocr_texts.append(OCRResult(source_file=file_meta.filename, text=extract_text(path)))
+                if progress:
+                    progress(
+                        "vision:complete",
+                        {
+                            "label": f"Analyse visuelle terminée ({file_meta.filename})",
+                            "file": file_meta.filename,
+                            "position": index,
+                            "total": total_files,
+                            "progress": vision_progress,
+                        },
+                    )
+                    progress(
+                        "ocr:start",
+                        {
+                            "label": f"OCR en cours ({file_meta.filename})",
+                            "file": file_meta.filename,
+                            "position": index,
+                            "total": total_files,
+                            "progress": max(vision_progress, ocr_progress - 5),
+                        },
+                    )
             elif file_meta.content_type == "application/pdf":
                 ocr_texts.append(
                     OCRResult(
@@ -65,6 +89,27 @@ class IngestionPipeline:
                         text="[pdf-ingestion-pending]",
                     )
                 )
+                if progress:
+                    progress(
+                        "vision:complete",
+                        {
+                            "label": f"Analyse visuelle terminée ({file_meta.filename})",
+                            "file": file_meta.filename,
+                            "position": index,
+                            "total": total_files,
+                            "progress": vision_progress,
+                        },
+                    )
+                    progress(
+                        "ocr:start",
+                        {
+                            "label": f"OCR en cours ({file_meta.filename})",
+                            "file": file_meta.filename,
+                            "position": index,
+                            "total": total_files,
+                            "progress": max(vision_progress, ocr_progress - 5),
+                        },
+                    )
             elif file_meta.content_type in {
                 "application/msword",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -75,6 +120,27 @@ class IngestionPipeline:
                         text="[docx-ingestion-pending]",
                     )
                 )
+                if progress:
+                    progress(
+                        "vision:complete",
+                        {
+                            "label": f"Analyse visuelle terminée ({file_meta.filename})",
+                            "file": file_meta.filename,
+                            "position": index,
+                            "total": total_files,
+                            "progress": vision_progress,
+                        },
+                    )
+                    progress(
+                        "ocr:start",
+                        {
+                            "label": f"OCR en cours ({file_meta.filename})",
+                            "file": file_meta.filename,
+                            "position": index,
+                            "total": total_files,
+                            "progress": max(vision_progress, ocr_progress - 5),
+                        },
+                    )
             else:
                 # Text files are stored directly as pseudo OCR output
                 try:
@@ -83,6 +149,41 @@ class IngestionPipeline:
                     )
                 except Exception:
                     ocr_texts.append(OCRResult(source_file=file_meta.filename, text=""))
+                if progress:
+                    progress(
+                        "vision:complete",
+                        {
+                            "label": f"Analyse visuelle terminée ({file_meta.filename})",
+                            "file": file_meta.filename,
+                            "position": index,
+                            "total": total_files,
+                            "progress": vision_progress,
+                        },
+                    )
+                    progress(
+                        "ocr:start",
+                        {
+                            "label": f"OCR en cours ({file_meta.filename})",
+                            "file": file_meta.filename,
+                            "position": index,
+                            "total": total_files,
+                            "progress": max(vision_progress, ocr_progress - 5),
+                        },
+                    )
+
+            if progress:
+                progress(
+                    "ocr:complete",
+                    {
+                        "label": f"OCR terminé ({file_meta.filename})",
+                        "file": file_meta.filename,
+                        "position": index,
+                        "total": total_files,
+                        "progress": ocr_progress,
+                    },
+                )
+
+            time.sleep(0.2)
 
         if progress:
             progress(

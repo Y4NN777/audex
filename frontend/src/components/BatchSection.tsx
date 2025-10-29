@@ -1,9 +1,18 @@
 import { useState } from "react";
-import { AlertTriangle, CheckCircle2, Clock3, FileText, Loader2 } from "lucide-react";
+import { CheckCircle2, FileText } from "lucide-react";
 
 import type { BatchSummary, BatchTimelineEntry } from "../types/batch";
 import { downloadReport } from "../services/reports";
 import { useToast } from "./ToastProvider";
+
+const STEP_DEFINITIONS = [
+  { id: "ingestion", label: "Fichiers reçus", threshold: 5, codes: ["ingestion:"] },
+  { id: "metadata", label: "Métadonnées extraites", threshold: 15, codes: ["metadata:"] },
+  { id: "vision", label: "Analyse visuelle", threshold: 45, codes: ["vision:"] },
+  { id: "ocr", label: "OCR & texte", threshold: 65, codes: ["ocr:"] },
+  { id: "scoring", label: "Scoring calculé", threshold: 85, codes: ["scoring:"] },
+  { id: "report", label: "Rapport disponible", threshold: 100, codes: ["report:"] }
+] as const;
 
 type Props = {
   title: string;
@@ -36,8 +45,8 @@ export function BatchSection({ title, batches, emptyMessage, onRetry, onRemove }
             const progress = clampProgress(
               batch.status === "completed" ? 100 : batch.progress ?? 0
             );
-            const showProgress =
-              batch.status === "processing" || batch.status === "uploading" || (progress > 0 && progress < 100);
+            const showProgress = progress > 0;
+            const steps = buildStepStates(batch, progress);
 
             return (
               <li key={batch.id}>
@@ -116,18 +125,17 @@ export function BatchSection({ title, batches, emptyMessage, onRetry, onRemove }
 
                 {batch.lastError && <p className="error">{batch.lastError}</p>}
 
-                {batch.timeline.length > 0 && (
-                  <div className="batch-timeline">
-                    <p className="timeline-title">Chronologie d’analyse</p>
-                    <ol>
-                      {batch.timeline.map((entry, index) => (
-                        <TimelineItem
-                          key={entry.id}
-                          entry={entry}
-                          isLatest={index === batch.timeline.length - 1}
-                        />
-                      ))}
-                    </ol>
+                {steps.length > 0 && (
+                  <div className="stepper">
+                    {steps.map((step, index) => (
+                      <div key={step.id} className={`step ${step.state}`}>
+                        <div className="step-marker">{index + 1}</div>
+                        <div className="step-info">
+                          <p className="step-title">{step.label}</p>
+                          <p className="step-caption">{step.detail ?? "En attente"}</p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
 
@@ -210,75 +218,51 @@ function truncateHash(hash: string): string {
   return `${hash.slice(0, 10)}…${hash.slice(-6)}`;
 }
 
-type TimelineProps = {
-  entry: BatchTimelineEntry;
-  isLatest: boolean;
+function clampProgress(value: number): number {
+  const rounded = Math.round(value);
+  if (Number.isNaN(rounded)) {
+    return 0;
+  }
+  return Math.min(100, Math.max(0, rounded));
+}
+
+type StepState = "done" | "current" | "pending";
+
+type StepView = {
+  id: string;
+  label: string;
+  state: StepState;
+  detail?: string;
 };
 
-function TimelineItem({ entry, isLatest }: TimelineProps) {
-  const icon = iconForKind(entry.kind);
-  const detail = describeDetails(entry);
+function buildStepStates(batch: BatchSummary, progress: number): StepView[] {
+  const timeline = batch.timeline ?? [];
+  const steps: StepView[] = [];
 
-  return (
-    <li className={`timeline-item ${isLatest ? "timeline-item-active" : ""}`}>
-      <span className={`timeline-icon icon-${entry.kind}`}>{icon}</span>
-      <div className="timeline-content">
-        <p className="timeline-label">{entry.label}</p>
-        <p className="timeline-meta">{formatTimestamp(entry.timestamp)}</p>
-        {detail && <p className="timeline-detail">{detail}</p>}
-      </div>
-    </li>
-  );
+  for (let index = 0; index < STEP_DEFINITIONS.length; index += 1) {
+    const def = STEP_DEFINITIONS[index];
+    const done = progress >= def.threshold;
+    const previousDone = index === 0 ? true : steps[index - 1].state === "done";
+    const state: StepState = done ? "done" : previousDone ? "current" : "pending";
+    const latestEntry = findLatestEntry(timeline, def.codes);
+    const detail = latestEntry ? `${latestEntry.label} — ${formatTimestamp(latestEntry.timestamp)}` : undefined;
+    steps.push({ id: def.id, label: def.label, state, detail });
+  }
+
+  return steps;
 }
 
-function iconForKind(kind: BatchTimelineEntry["kind"]) {
-  switch (kind) {
-    case "success":
-      return <CheckCircle2 size={16} />;
-    case "warning":
-      return <Clock3 size={16} />;
-    case "error":
-      return <AlertTriangle size={16} />;
-    default:
-      return <Loader2 size={16} />;
+function findLatestEntry(
+  timeline: BatchTimelineEntry[],
+  codes: readonly string[]
+): BatchTimelineEntry | undefined {
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    const entry = timeline[index];
+    if (codes.some((code) => entry.stage.startsWith(code))) {
+      return entry;
+    }
   }
-}
-
-function describeDetails(entry: BatchTimelineEntry): string | null {
-  const details = entry.details ?? {};
-  if ("file" in details && "position" in details && "total" in details) {
-    const position = Number(details.position);
-    const total = Number(details.total);
-    const file = String(details.file ?? "");
-    return `Fichier ${Number.isFinite(position) ? position : "?"}/${Number.isFinite(total) ? total : "?"} — ${file}`;
-  }
-  if ("fileCount" in details) {
-    const count = Number(details.fileCount);
-    return `${Number.isFinite(count) ? count : "?"} fichier(s)`;
-  }
-  if ("hasMetadata" in details) {
-    return details.hasMetadata ? "Métadonnées détectées" : "Aucune métadonnée trouvée";
-  }
-  if ("observationCount" in details) {
-    const count = Number(details.observationCount);
-    return `${Number.isFinite(count) ? count : "?"} observation(s) détectée(s)`;
-  }
-  if ("score" in details && typeof details.score === "number") {
-    return `Score global : ${(details.score as number).toFixed(2)}`;
-  }
-  if ("hasRisk" in details) {
-    return details.hasRisk ? "Score de risque disponible" : "Aucun risque identifié";
-  }
-  if ("hash" in details) {
-    return `Hash : ${truncateHash(String(details.hash))}`;
-  }
-  if ("message" in details) {
-    return String(details.message);
-  }
-  if ("label" in details && typeof details.label === "string") {
-    return details.label;
-  }
-  return null;
+  return undefined;
 }
 
 function formatTimestamp(value: string): string {
@@ -288,12 +272,4 @@ function formatTimestamp(value: string): string {
   } catch {
     return value;
   }
-}
-
-function clampProgress(value: number): number {
-  const rounded = Math.round(value);
-  if (Number.isNaN(rounded)) {
-    return 0;
-  }
-  return Math.min(100, Math.max(0, rounded));
 }
