@@ -8,10 +8,12 @@ type Props = {
   batches: BatchSummary[];
   emptyMessage: string;
   onRetry?: (batchId: string) => Promise<void>;
+  onRemove?: (batchId: string) => Promise<void>;
 };
 
-export function BatchSection({ title, batches, emptyMessage, onRetry }: Props) {
+export function BatchSection({ title, batches, emptyMessage, onRetry, onRemove }: Props) {
   const [retrying, setRetrying] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
 
   return (
     <section className="card">
@@ -26,6 +28,7 @@ export function BatchSection({ title, batches, emptyMessage, onRetry }: Props) {
           {batches.map((batch) => {
             const size = formatSize(batch.files.reduce((total, file) => total + file.size, 0));
             const isRetryable = onRetry && (batch.status === "failed" || batch.status === "pending");
+            const canRemove = onRemove && (batch.status === "failed" || batch.status === "pending");
 
             return (
               <li key={batch.id}>
@@ -61,22 +64,40 @@ export function BatchSection({ title, batches, emptyMessage, onRetry }: Props) {
 
                 {batch.lastError && <p className="error">{batch.lastError}</p>}
 
-                {isRetryable && (
+                {(isRetryable || canRemove) && (
                   <div className="batch-actions">
-                    <button
-                      type="button"
-                      className="retry-button"
-                      disabled={retrying === batch.id}
-                      onClick={() => {
-                        if (!onRetry) return;
-                        setRetrying(batch.id);
-                        onRetry(batch.id)
-                          .catch((error) => console.error("Retry failed", error))
-                          .finally(() => setRetrying(null));
-                      }}
-                    >
-                      {retrying === batch.id ? "Nouvelle tentative…" : "Réessayer"}
-                    </button>
+                    {isRetryable && (
+                      <button
+                        type="button"
+                        className="retry-button"
+                        disabled={retrying === batch.id}
+                        onClick={() => {
+                          if (!onRetry) return;
+                          setRetrying(batch.id);
+                          onRetry(batch.id)
+                            .catch((error) => console.error("Retry failed", error))
+                            .finally(() => setRetrying(null));
+                        }}
+                      >
+                        {retrying === batch.id ? "Nouvelle tentative…" : "Réessayer"}
+                      </button>
+                    )}
+                    {canRemove && (
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        disabled={removing === batch.id}
+                        onClick={() => {
+                          if (!onRemove) return;
+                          setRemoving(batch.id);
+                          onRemove(batch.id)
+                            .catch((error) => console.error("Remove failed", error))
+                            .finally(() => setRemoving(null));
+                        }}
+                      >
+                        {removing === batch.id ? "Suppression…" : "Retirer"}
+                      </button>
+                    )}
                   </div>
                 )}
               </li>

@@ -5,9 +5,20 @@ type Props = {
   onSync: () => Promise<void> | void;
   eventsConnected: boolean;
   eventsAvailable: boolean;
+  onBulkRetry: () => Promise<void> | void;
+  onClearPending: () => Promise<void> | void;
 };
 
-export function SyncControls({ online, pendingCount, syncing, onSync, eventsConnected, eventsAvailable }: Props) {
+export function SyncControls({
+  online,
+  pendingCount,
+  syncing,
+  onSync,
+  eventsConnected,
+  eventsAvailable,
+  onBulkRetry,
+  onClearPending
+}: Props) {
   const hasPending = pendingCount > 0;
 
   return (
@@ -21,21 +32,22 @@ export function SyncControls({ online, pendingCount, syncing, onSync, eventsConn
               ? `${pendingCount} lot(s) en attente de synchronisation`
               : "Toutes les données sont à jour"}
           </p>
-          {eventsAvailable && (
-            <p className="muted-text subtle">
-              Flux d'événements : {eventsConnected ? "connecté" : "déconnecté"}
-            </p>
-          )}
+          <p className="muted-text subtle">
+            Flux d'événements : {eventsAvailable ? (eventsConnected ? "connecté" : "déconnecté") : "indisponible"}
+          </p>
         </div>
       </div>
-      <button
-        type="button"
-        className="sync-button"
-        onClick={() => void onSync()}
-        disabled={!online || !hasPending || syncing}
-      >
-        {syncing ? "Synchronisation…" : "Synchroniser maintenant"}
-      </button>
+      <div className="sync-actions">
+        <button type="button" className="sync-button" onClick={() => void onSync()} disabled={!online || !hasPending || syncing}>
+          {syncing ? "Synchronisation…" : "Synchroniser"}
+        </button>
+        <button type="button" className="outline-button" onClick={() => void onBulkRetry()} disabled={!hasPending || syncing}>
+          Réessayer tout
+        </button>
+        <button type="button" className="ghost-button" onClick={() => void onClearPending()} disabled={!hasPending || syncing}>
+          Vider la liste
+        </button>
+      </div>
     </section>
   );
 }

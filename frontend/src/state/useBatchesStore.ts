@@ -9,6 +9,7 @@ type BatchesState = {
   upsertBatch: (item: BatchSummary) => void;
   mergeBatch: (batchId: string, partial: Partial<BatchSummary>) => void;
   updateStatus: (batchId: string, status: BatchStatus, options?: { lastError?: string; report?: BatchSummary["report"] }) => void;
+  removeBatch: (batchId: string) => void;
 };
 
 export const useBatchesStore = create<BatchesState>((set) => ({
@@ -41,5 +42,9 @@ export const useBatchesStore = create<BatchesState>((set) => ({
             }
           : batch
       )
+    })),
+  removeBatch: (batchId) =>
+    set((state) => ({
+      batches: state.batches.filter((batch) => batch.id !== batchId)
     }))
 }));

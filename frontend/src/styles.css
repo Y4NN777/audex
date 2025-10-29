@@ -129,6 +129,7 @@ header p {
   justify-content: space-between;
   align-items: center;
   gap: 1.5rem;
+  flex-wrap: wrap;
 }
 
 .status-block {
@@ -165,6 +166,12 @@ header p {
   font-size: 0.85rem;
 }
 
+.sync-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 .sync-button {
   background: #0f172a;
   color: #fff;
@@ -178,6 +185,36 @@ header p {
 
 .sync-button:disabled {
   background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.outline-button {
+  background: transparent;
+  color: #0f172a;
+  border: 1px solid #0f172a;
+  border-radius: 0.75rem;
+  padding: 0.6rem 1.3rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.outline-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ghost-button {
+  background: transparent;
+  color: #475569;
+  border: none;
+  border-radius: 0.75rem;
+  padding: 0.6rem 1.3rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ghost-button:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
 

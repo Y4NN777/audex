@@ -14,7 +14,7 @@ import { useBatchesStore } from "./state/useBatchesStore";
 function App() {
   const online = useOnlineStatus();
   const { setBatches } = useBatchesStore();
-  const { submitFiles, retryBatch, uploading } = useBatchUploader({ online });
+  const { submitFiles, retryBatch, removeBatch, uploading } = useBatchUploader({ online });
   const batches = useBatchesStore((state) => state.batches);
   const [syncing, setSyncing] = useState(false);
   const { connected: eventsConnected, available: eventsAvailable } = useBatchEvents(online);
@@ -95,6 +95,22 @@ function App() {
     }
   }, [setBatches]);
 
+  const handleBulkRetry = useCallback(async () => {
+    for (const batch of pendingBatches) {
+      await retryBatch(batch.id);
+    }
+    const items = await loadBatches();
+    setBatches(items);
+  }, [pendingBatches, retryBatch, setBatches]);
+
+  const handleClearPending = useCallback(async () => {
+    for (const batch of pendingBatches) {
+      await removeBatch(batch.id);
+    }
+    const items = await loadBatches();
+    setBatches(items);
+  }, [pendingBatches, removeBatch, setBatches]);
+
   return (
     <div className="app-shell">
       <header>
@@ -124,6 +140,8 @@ function App() {
         eventsConnected={eventsConnected}
         eventsAvailable={eventsAvailable}
         onSync={triggerSync}
+        onBulkRetry={handleBulkRetry}
+        onClearPending={handleClearPending}
       />
 
       <UploadPanel onUpload={handleUpload} isUploading={uploading} online={online} />
@@ -140,6 +158,7 @@ function App() {
         batches={pendingBatches}
         emptyMessage="Pas de lot en attente de synchronisation."
         onRetry={retryBatch}
+        onRemove={removeBatch}
       />
 
       {syncedBatches.length === 0 && pendingBatches.length === 0 && (

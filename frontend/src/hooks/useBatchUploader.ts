@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 
-import { mapFilesMetadata, persistBatch, updateBatch, loadFiles, loadBatches, getBatch } from "../services/db";
+import { mapFilesMetadata, persistBatch, updateBatch, loadFiles, loadBatches, getBatch, deleteBatch } from "../services/db";
 import { api, parseApiError } from "../services/api";
 import { useBatchesStore } from "../state/useBatchesStore";
 import type { BatchStatus, BatchSummary } from "../types/batch";
@@ -9,6 +9,7 @@ import { toFriendlyError } from "../utils/errors";
 type UploadResult = {
   submitFiles: (files: File[]) => Promise<void>;
   retryBatch: (batchId: string) => Promise<void>;
+  removeBatch: (batchId: string) => Promise<void>;
   uploading: boolean;
 };
 
@@ -36,7 +37,7 @@ function createBatch(files: File[], status: BatchStatus): BatchSummary {
 }
 
 export function useBatchUploader({ online }: { online: boolean }): UploadResult {
-  const { upsertBatch, updateStatus } = useBatchesStore();
+  const { upsertBatch, updateStatus, mergeBatch, removeBatch: removeFromStore } = useBatchesStore();
   const [uploading, setUploading] = useState(false);
 
   const submitFiles = useCallback(
@@ -100,7 +101,15 @@ export function useBatchUploader({ online }: { online: boolean }): UploadResult 
     [updateStatus]
   );
 
-  return { submitFiles, retryBatch, uploading };
+  const removeBatch = useCallback(
+    async (batchId: string) => {
+      await deleteBatch(batchId);
+      removeFromStore(batchId);
+    },
+    [removeFromStore]
+  );
+
+  return { submitFiles, retryBatch, uploading, removeBatch };
 }
 
 export async function synchronizePendingBatches(): Promise<BatchSummary[]> {
