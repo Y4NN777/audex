@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
 from fastapi import status
@@ -34,6 +35,59 @@ def _make_image_with_exif() -> bytes:
     image.save(buffer, format="JPEG", exif=exif)
     return buffer.getvalue()
 
+def _make_docx_bytes() -> bytes:
+    buffer = BytesIO()
+    with ZipFile(buffer, "w") as archive:
+        archive.writestr(
+            "[Content_Types].xml",
+            """<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>""",
+        )
+        archive.writestr(
+            "_rels/.rels",
+            """<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>""",
+        )
+        archive.writestr(
+            "word/document.xml",
+            """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+ xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"
+ xmlns:v="urn:schemas-microsoft-com:vml"
+ xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing"
+ xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+ xmlns:w10="urn:schemas-microsoft-com:office:word"
+ xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+ xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"
+ xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"
+ xmlns:wpi="http://schemas.microsoft.com/office/word/2010/wordprocessingInk"
+ xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml"
+ xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+ mc:Ignorable="w14 wp14">
+  <w:body>
+    <w:p>
+      <w:r>
+        <w:t>Bonjour AUDEX</w:t>
+      </w:r>
+    </w:p>
+    <w:sectPr>
+      <w:pgSz w:w="12240" w:h="15840"/>
+      <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>
+    </w:sectPr>
+  </w:body>
+</w:document>""",
+        )
+    return buffer.getvalue()
+
 
 class RecordingBatchProcessor:
     def __init__(self) -> None:
@@ -61,6 +115,7 @@ async def test_create_batch_persists_files(tmp_path: Path) -> None:
         files = [
             ("files", ("test.jpg", _make_image_bytes(), "image/jpeg")),
             ("files", ("notes.txt", b"Important note", "text/plain")),
+            ("files", ("rapport.docx", _make_docx_bytes(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")),
         ]
         response = await client.post("/api/v1/ingestion/batches", files=files)
 
@@ -71,7 +126,12 @@ async def test_create_batch_persists_files(tmp_path: Path) -> None:
     payload = response.json()
     assert "batch_id" in payload
     assert payload["stored_at"] is not None
-    assert len(payload["files"]) == 2
+    assert len(payload["files"]) == 3
+    timeline = payload.get("timeline", [])
+    assert isinstance(timeline, list)
+    assert timeline, "timeline should contain backend processing stages"
+    assert timeline[-1]["code"] == "report:available"
+    assert payload["report_url"] == f"/api/v1/ingestion/reports/{payload['batch_id']}"
 
     for file_info in payload["files"]:
         stored_path = Path(file_info["stored_path"])
@@ -83,7 +143,7 @@ async def test_create_batch_persists_files(tmp_path: Path) -> None:
     assert len(processor.calls) == 1
     recorded_batch_id, recorded_files = processor.calls[0]
     assert recorded_batch_id == payload["batch_id"]
-    assert len(recorded_files) == 2
+    assert len(recorded_files) == 3
 
 
 @pytest.mark.asyncio

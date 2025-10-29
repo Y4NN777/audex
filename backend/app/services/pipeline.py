@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Callable, Iterable, List
 
 from app.pipelines.models import OCRResult, Observation, PipelineResult
 from app.services.scoring import RiskScorer
@@ -17,11 +17,42 @@ class IngestionPipeline:
         self.storage_root = storage_root
         self.scorer = scorer or RiskScorer()
 
-    def run(self, batch_id: str, files: Iterable[FileMetadata]) -> PipelineResult:
+    def run(
+        self,
+        batch_id: str,
+        files: Iterable[FileMetadata],
+        progress: Callable[[str, dict[str, Any]], None] | None = None,
+    ) -> PipelineResult:
+        file_list: List[FileMetadata] = list(files)
         observations: list[Observation] = []
         ocr_texts: list[OCRResult] = []
 
-        for file_meta in files:
+        total_files = len(file_list)
+
+        if progress:
+            progress(
+                "analysis:start",
+                {
+                    "label": "Analyse OCR & vision démarrée",
+                    "fileCount": total_files,
+                    "progress": 25,
+                },
+            )
+
+        for index, file_meta in enumerate(file_list, start=1):
+            if progress:
+                per_file_progress = 30 + int(40 * min(max(index / max(total_files, 1), 0.0), 1.0))
+                progress(
+                    "analysis:file",
+                    {
+                        "label": f"Traitement de {file_meta.filename}",
+                        "file": file_meta.filename,
+                        "position": index,
+                        "total": total_files,
+                        "progress": per_file_progress,
+                    },
+                )
+
             path = Path(file_meta.stored_path)
 
             if file_meta.content_type.startswith("image/"):
@@ -34,6 +65,16 @@ class IngestionPipeline:
                         text="[pdf-ingestion-pending]",
                     )
                 )
+            elif file_meta.content_type in {
+                "application/msword",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            }:
+                ocr_texts.append(
+                    OCRResult(
+                        source_file=file_meta.filename,
+                        text="[docx-ingestion-pending]",
+                    )
+                )
             else:
                 # Text files are stored directly as pseudo OCR output
                 try:
@@ -43,6 +84,27 @@ class IngestionPipeline:
                 except Exception:
                     ocr_texts.append(OCRResult(source_file=file_meta.filename, text=""))
 
+        if progress:
+            progress(
+                "analysis:complete",
+                {
+                    "label": "Analyse OCR & vision terminée",
+                    "observationCount": len(observations),
+                    "progress": 70,
+                },
+            )
+
         risk = self.scorer.score(batch_id, observations) if observations else None
+
+        if progress:
+            progress(
+                "scoring:complete",
+                {
+                    "label": "Calcul du score de risque effectué",
+                    "hasRisk": risk is not None,
+                    "score": getattr(risk, "overall", None) if risk else None,
+                    "progress": 85,
+                },
+            )
 
         return PipelineResult(batch_id=batch_id, observations=observations, ocr_texts=ocr_texts, risk=risk)

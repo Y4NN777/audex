@@ -19,3 +19,5 @@ class BatchResponse(BaseModel):
     stored_at: datetime
     status: str = Field(..., description="Current status of the batch processing.")
     report_hash: str | None = None
+    report_url: str | None = None
+    timeline: list[dict[str, Any]] | None = None
