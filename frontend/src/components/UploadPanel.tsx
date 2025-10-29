@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CloudUpload, File as FileIcon, FileText, Image as ImageIcon } from "lucide-react";
 
 import { toFriendlyError } from "../utils/errors";
 
@@ -142,7 +143,7 @@ export function UploadPanel({ onUpload, isUploading, online }: Props) {
           onDrop={handleDrop}
         >
           <div className="dropzone-inner">
-            <div className="upload-icon" />
+            <CloudUpload className="dropzone-icon" size={54} strokeWidth={1.8} />
             <div className="dropzone-copy">
               <strong>Glissez vos fichiers ici</strong>
               <span>ou</span>
@@ -179,7 +180,7 @@ export function UploadPanel({ onUpload, isUploading, online }: Props) {
           <ul className="preview-list">
             {previews.map((preview) => (
               <li key={preview.id} className={`preview-item status-${preview.status}`}>
-                {preview.url ? <img src={preview.url} alt={preview.file.name} /> : <span className="file-icon" />}
+                {preview.url ? <img src={preview.url} alt={preview.file.name} /> : renderFileIcon(preview.file)}
                 <div className="preview-info">
                   <p className="preview-name">{preview.file.name}</p>
                   <p className="muted-text subtle">{formatSize(preview.file.size)}</p>
@@ -211,6 +212,16 @@ function ProgressBar({ progress, status }: { progress: number; status: PreviewSt
       <div className={`progress-bar status-${status}`} style={{ width: `${progress}%` }} />
     </div>
   );
+}
+
+function renderFileIcon(file: File) {
+  if (file.type === "application/pdf") {
+    return <FileText className="file-icon" size={40} strokeWidth={1.8} />;
+  }
+  if (file.type.startsWith("image/")) {
+    return <ImageIcon className="file-icon" size={40} strokeWidth={1.8} />;
+  }
+  return <FileIcon className="file-icon" size={40} strokeWidth={1.8} />;
 }
 
 function formatSize(bytes: number): string {

@@ -216,12 +216,13 @@ ol {
   box-shadow: none;
 }
 
-.upload-icon {
-  width: 72px;
-  height: 72px;
+
+.dropzone-icon {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.1);
   border-radius: 20px;
-  background: linear-gradient(145deg, #60a5fa, #2563eb);
-  box-shadow: 0 10px 30px rgba(37, 99, 235, 0.25);
+  padding: 0.85rem;
+  box-shadow: 0 10px 30px rgba(37, 99, 235, 0.2);
 }
 
 .dropzone-copy {
@@ -274,8 +275,11 @@ ol {
 .file-icon {
   width: 48px;
   height: 48px;
+  padding: 0.35rem;
+  color: #1e40af;
   border-radius: 0.5rem;
-  background: linear-gradient(135deg, #93c5fd, #6366f1);
+  background: #e0e7ff;
+  border: 1px solid #cbd5f5;
 }
 
 .preview-info {
