@@ -1,6 +1,9 @@
 ## AUDEX — Plateforme d’audit intelligent
 
-AUDEX est une application web qui automatise l’analyse d’audits de sûreté pour des sites sensibles. Le système intègre vision par ordinateur, traitement de texte et règles métier afin de produire en quelques minutes des rapports structurés et traçables.
+AUDEX est une application web qui automatise l’analyse d’audits de sûreté pour des sites sensibles. Le système intègre vision par ordinateur, traitement de texte, LLM de vision et règles métier afin de produire en quelques minutes des rapports structurés et traçables.
+
+<img width="977" height="926" alt="image" src="https://github.com/user-attachments/assets/2983d2c8-237c-47eb-a318-ff2066728d28" />
+
 
 ---
 
