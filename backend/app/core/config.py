@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 
 
 class Settings(BaseSettings):
@@ -8,6 +9,10 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "AUDEX"
     BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:5173"]
     STORAGE_PATH: str = "tmp/uploads"
+    DATABASE_URL: str = Field(
+        default="sqlite+aiosqlite:///./audex.db",
+        description="SQLAlchemy database URL",
+    )
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

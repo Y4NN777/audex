@@ -9,8 +9,11 @@ from fastapi import status
 from httpx import ASGITransport, AsyncClient
 from PIL import Image
 from PIL.TiffImagePlugin import IFDRational
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlmodel import SQLModel
 
 from app.api.v1.endpoints.ingestion import get_processor, get_storage_root
+from app.db.session import get_session
 from app.main import app
 
 
@@ -104,7 +107,7 @@ class RecordingBatchProcessor:
 
 
 @pytest.mark.asyncio
-async def test_create_batch_persists_files(tmp_path: Path) -> None:
+async def test_create_batch_persists_files(tmp_path: Path, isolated_session: None) -> None:
     storage_dir = tmp_path / "uploads"
     processor = RecordingBatchProcessor()
 
@@ -147,7 +150,7 @@ async def test_create_batch_persists_files(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_batch_rejects_unsupported_content_type(tmp_path: Path) -> None:
+async def test_create_batch_rejects_unsupported_content_type(tmp_path: Path, isolated_session: None) -> None:
     storage_dir = tmp_path / "uploads"
     app.dependency_overrides[get_storage_root] = lambda: storage_dir
 
@@ -164,7 +167,7 @@ async def test_create_batch_rejects_unsupported_content_type(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
-async def test_create_batch_extracts_metadata(tmp_path: Path) -> None:
+async def test_create_batch_extracts_metadata(tmp_path: Path, isolated_session: None) -> None:
     storage_dir = tmp_path / "uploads"
     processor = RecordingBatchProcessor()
 
@@ -188,3 +191,21 @@ async def test_create_batch_extracts_metadata(tmp_path: Path) -> None:
     gps = metadata["gps"]
     assert pytest.approx(gps["latitude"], 0.01) == 12.5666  # approx 12 deg 34 min
     assert pytest.approx(gps["longitude"], 0.01) == 56.1166
+@pytest.fixture
+async def isolated_session(tmp_path: Path):
+    database_url = f"sqlite+aiosqlite:///{(tmp_path / 'test.db').as_posix()}"
+    engine = create_async_engine(database_url, future=True)
+    async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+
+    async def _session_override():
+        async with async_session() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = _session_override
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(get_session, None)
+        await engine.dispose()

@@ -25,6 +25,7 @@ dist/
 # OS / Editor
 .DS_Store
 Thumbs.db
+*.db
 *.swp
 *.swo
 .idea/

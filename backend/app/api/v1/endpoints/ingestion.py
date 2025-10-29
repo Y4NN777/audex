@@ -8,8 +8,11 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.db.session import get_session
+from app.repositories import batches as batch_repo
 from app.schemas.ingestion import BatchResponse, FileMetadata
 from app.services.batch_processor import BatchProcessorProtocol, get_batch_processor
 from app.services.events import event_bus
@@ -17,7 +20,6 @@ from app.services.metadata import extract_image_metadata
 from app.services.pipeline import IngestionPipeline
 from app.services.report import ReportBuilder
 from app.services.storage import allowed_content_type, sanitize_filename, save_upload_file
-from app.services.store import BatchRecord, batch_store
 
 router = APIRouter()
 
@@ -43,6 +45,7 @@ async def create_batch(
     files: list[UploadFile],
     client_batch_id: str | None = Form(None),
     storage_root: Path = Depends(get_storage_root),
+    session: AsyncSession = Depends(get_session),
     processor: BatchProcessorProtocol = Depends(get_processor),
 ) -> BatchResponse:
     if not files:
@@ -59,6 +62,7 @@ async def create_batch(
     storage_root.mkdir(parents=True, exist_ok=True)
 
     timeline_events: list[dict[str, Any]] = []
+    db_event_records: list[dict[str, Any]] = []
     stage_progress_map: dict[str, int] = {
         "ingestion:received": 5,
         "metadata:extracted": 15,
@@ -77,18 +81,6 @@ async def create_batch(
     def resolve_progress(stage_code: str, details: dict[str, Any] | None, explicit: int | None) -> int | None:
         if explicit is not None:
             return explicit
-        if stage_code == "analysis:file":
-            if not details:
-                return None
-            total = int(details.get("total") or 0)
-            position = int(details.get("position") or 0)
-            if total <= 0:
-                return None
-            # Spread per-file progress between 30 and 65
-            base = 30
-            span = 40
-            ratio = min(max(position / total, 0.0), 1.0)
-            return base + int(span * ratio)
         return stage_progress_map.get(stage_code)
 
     def build_stage(
@@ -99,12 +91,13 @@ async def create_batch(
         details: dict[str, Any] | None = None,
         progress: int | None = None,
     ) -> dict[str, Any]:
+        timestamp = datetime.now(tz=timezone.utc)
         stage: dict[str, Any] = {
             "eventId": uuid4().hex,
             "code": stage_code,
             "label": label,
             "kind": kind,
-            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+            "timestamp": timestamp.isoformat(),
         }
         if details:
             stage["details"] = details
@@ -112,7 +105,20 @@ async def create_batch(
         if resolved_progress is not None:
             stage["progress"] = max(0, min(100, resolved_progress))
         timeline_events.append(stage)
+        db_event_records.append(
+            {
+                "code": stage_code,
+                "label": label,
+                "kind": kind,
+                "timestamp": timestamp,
+                "progress": stage.get("progress"),
+                "details": details,
+            }
+        )
         return stage
+
+    async def publish_stage(stage: dict[str, Any]) -> None:
+        await event_bus.publish({"batchId": batch_id, "stage": stage})
 
     async def emit_stage(
         stage_code: str,
@@ -123,7 +129,7 @@ async def create_batch(
         progress: int | None = None,
     ) -> None:
         stage = build_stage(stage_code, label, kind=kind, details=details, progress=progress)
-        await event_bus.publish({"batchId": batch_id, "stage": stage})
+        await publish_stage(stage)
 
     def schedule_stage(
         stage_code: str,
@@ -134,7 +140,7 @@ async def create_batch(
         progress: int | None = None,
     ) -> None:
         stage = build_stage(stage_code, label, kind=kind, details=details, progress=progress)
-        asyncio.create_task(event_bus.publish({"batchId": batch_id, "stage": stage}))
+        asyncio.create_task(publish_stage(stage))
 
     for upload in files:
         if not allowed_content_type(upload.content_type or "", ALLOWED_CONTENT_TYPES):
@@ -164,9 +170,7 @@ async def create_batch(
         )
 
     created_at = datetime.now(tz=timezone.utc)
-    await batch_store.set_batch(
-        BatchRecord(id=batch_id, created_at=created_at, status="processing", files=stored_files)
-    )
+    await batch_repo.create_batch(session, batch_id, "processing", stored_files, created_at)
     await emit_stage(
         "ingestion:received",
         "Fichiers reçus et stockés",
@@ -179,6 +183,11 @@ async def create_batch(
     pipeline = IngestionPipeline(storage_root)
     reports_dir = storage_root / "reports"
     report_builder = ReportBuilder(reports_dir)
+
+    async def persist_events() -> None:
+        if db_event_records:
+            await batch_repo.add_events(session, batch_id, db_event_records.copy())
+            db_event_records.clear()
 
     try:
         await emit_stage(
@@ -205,10 +214,11 @@ async def create_batch(
             details={"hash": artifact.checksum_sha256, "path": str(artifact.path)},
             progress=95,
         )
-        await batch_store.update_batch(
+        await batch_repo.update_batch(
+            session,
             batch_id,
             status="completed",
-            report_path=artifact.path,
+            report_path=str(artifact.path),
             report_hash=artifact.checksum_sha256,
         )
         final_stage = build_stage(
@@ -238,7 +248,7 @@ async def create_batch(
             timeline=timeline_events,
         )
     except Exception as exc:  # noqa: BLE001
-        await batch_store.update_batch(batch_id, status="failed", last_error=str(exc))
+        await batch_repo.update_batch(session, batch_id, status="failed", last_error=str(exc))
         error_stage = build_stage(
             "pipeline:error",
             "Erreur durant le traitement",
@@ -254,6 +264,8 @@ async def create_batch(
             }
         )
         raise HTTPException(status_code=500, detail="Batch processing failed") from exc
+    finally:
+        await persist_events()
 
 
 async def _event_stream(request: Request, queue: asyncio.Queue[str], interval: float = 15.0):
@@ -278,9 +290,12 @@ async def ingestion_events(request: Request) -> StreamingResponse:
 
 
 @router.get("/reports/{batch_id}", summary="Télécharger le rapport généré")
-async def download_report(batch_id: str) -> FileResponse:
-    record = await batch_store.get(batch_id)
+async def download_report(batch_id: str, session: AsyncSession = Depends(get_session)) -> FileResponse:
+    record = await batch_repo.get_batch(session, batch_id)
     if not record or not record.report_path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
-    filename = record.report_path.name
-    return FileResponse(record.report_path, media_type="application/pdf", filename=filename)
+    report_path = Path(record.report_path)
+    if not report_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+    filename = report_path.name
+    return FileResponse(report_path, media_type="application/pdf", filename=filename)
