@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 
 import { API_BASE_URL } from "../services/api";
-import { mergeBatchRecord } from "../services/db";
+import { appendTimelineEntry, mergeBatchRecord } from "../services/db";
+import { resolveReportUrl } from "../services/reports";
 import { useBatchesStore } from "../state/useBatchesStore";
-import type { BatchStatus, BatchSummary } from "../types/batch";
+import type { BatchStatus, BatchSummary, BatchTimelineEntry, TimelineEventKind } from "../types/batch";
 
 type BatchEventPayload = {
   batchId: string;
@@ -11,12 +12,23 @@ type BatchEventPayload = {
   error?: string;
   reportHash?: string;
   reportUrl?: string;
+  stage?: {
+    eventId: string;
+    code: string;
+    label: string;
+    kind: TimelineEventKind;
+    timestamp: string;
+    details?: Record<string, unknown>;
+    progress?: number;
+  };
 };
 
 const EVENTS_ENDPOINT = `${API_BASE_URL}/api/v1/ingestion/events`;
 
 export function useBatchEvents(enabled: boolean) {
   const mergeBatch = useBatchesStore((state) => state.mergeBatch);
+  const addTimelineEntry = useBatchesStore((state) => state.addTimelineEntry);
+  const setProgress = useBatchesStore((state) => state.setProgress);
   const [connected, setConnected] = useState(false);
   const [available, setAvailable] = useState(true);
   const sourceRef = useRef<EventSource | null>(null);
@@ -65,13 +77,30 @@ export function useBatchEvents(enabled: boolean) {
         if (payload.reportHash || payload.reportUrl) {
           updates.report = {
             hash: payload.reportHash,
-            downloadUrl: payload.reportUrl ?? `${API_BASE_URL}/api/v1/reports/${payload.batchId}`
+            downloadUrl: resolveReportUrl(payload.batchId)
           };
         }
 
         if (Object.keys(updates).length > 0) {
           mergeBatch(payload.batchId, updates);
           await mergeBatchRecord(payload.batchId, updates);
+        }
+
+        if (payload.stage) {
+          const entry: BatchTimelineEntry = {
+            id: payload.stage.eventId,
+            stage: payload.stage.code,
+            label: payload.stage.label,
+            timestamp: payload.stage.timestamp,
+            kind: payload.stage.kind,
+            details: payload.stage.details ?? {},
+            progress: payload.stage.progress
+          };
+          addTimelineEntry(payload.batchId, entry);
+          await appendTimelineEntry(payload.batchId, entry);
+          if (typeof entry.progress === "number") {
+            setProgress(payload.batchId, entry.progress);
+          }
         }
       } catch (error) {
         console.error("Failed to parse batch event", error);
@@ -83,7 +112,7 @@ export function useBatchEvents(enabled: boolean) {
       sourceRef.current = null;
       setConnected(false);
     };
-  }, [enabled, mergeBatch]);
+  }, [enabled, mergeBatch, addTimelineEntry, setProgress]);
 
   return { connected, available };
 }

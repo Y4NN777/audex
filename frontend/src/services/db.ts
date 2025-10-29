@@ -1,6 +1,6 @@
 import { openDB, type IDBPDatabase } from "idb";
 
-import type { BatchSummary, StoredFile } from "../types/batch";
+import type { BatchSummary, BatchTimelineEntry, StoredFile } from "../types/batch";
 
 type BatchRecord = BatchSummary & { syncedAt?: string };
 type FileRecord = {
@@ -70,10 +70,20 @@ export async function deleteBatch(batchId: string): Promise<void> {
   await tx.done;
 }
 
+function normalizeBatch<T extends BatchSummary>(batch: T): T {
+  return {
+    ...batch,
+    timeline: Array.isArray(batch.timeline) ? batch.timeline : [],
+    progress: typeof batch.progress === "number" ? batch.progress : 0
+  };
+}
+
 export async function loadBatches(): Promise<BatchSummary[]> {
   const db = await getDB();
   const records = await db.getAll(BATCH_STORE);
-  return (records as BatchRecord[]).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return (records as BatchRecord[])
+    .map((record) => normalizeBatch(record))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 export async function loadFiles(batchId: string): Promise<File[]> {
@@ -93,7 +103,7 @@ export async function loadFiles(batchId: string): Promise<File[]> {
 export async function getBatch(batchId: string): Promise<BatchSummary | undefined> {
   const db = await getDB();
   const record = await db.get(BATCH_STORE, batchId);
-  return record as BatchRecord | undefined;
+  return record ? normalizeBatch(record as BatchRecord) : undefined;
 }
 
 export async function mergeBatchRecord(batchId: string, partial: Partial<BatchSummary>): Promise<BatchSummary | undefined> {
@@ -103,6 +113,26 @@ export async function mergeBatchRecord(batchId: string, partial: Partial<BatchSu
     return undefined;
   }
   const updated: BatchRecord = { ...record, ...partial } as BatchRecord;
+  updated.timeline = Array.isArray(updated.timeline) ? updated.timeline : [];
+  updated.progress = typeof updated.progress === "number" ? updated.progress : 0;
+  await db.put(BATCH_STORE, updated);
+  return updated;
+}
+
+export async function appendTimelineEntry(batchId: string, entry: BatchTimelineEntry): Promise<BatchSummary | undefined> {
+  const db = await getDB();
+  const record = (await db.get(BATCH_STORE, batchId)) as BatchRecord | undefined;
+  if (!record) {
+    return undefined;
+  }
+  const timeline = Array.isArray(record.timeline) ? record.timeline.slice() : [];
+  const exists = timeline.some((item) => item.id === entry.id);
+  if (!exists) {
+    timeline.push(entry);
+    timeline.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  }
+  const progress = entry.progress !== undefined ? Math.max(record.progress ?? 0, entry.progress) : record.progress ?? 0;
+  const updated: BatchRecord = { ...record, timeline, progress };
   await db.put(BATCH_STORE, updated);
   return updated;
 }
