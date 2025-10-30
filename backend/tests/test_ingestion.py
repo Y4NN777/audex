@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from io import BytesIO
 from pathlib import Path
 from zipfile import ZipFile
+from unittest.mock import patch
 
 import pytest
 from fastapi import status
@@ -17,6 +19,8 @@ from app.api.v1.endpoints.ingestion import get_processor, get_storage_root
 from app.core.config import settings
 from app.db.session import get_session
 from app.main import app
+from app.pipelines.models import Observation
+from app.services.advanced_analyzer import GeminiAnalysisResult
 
 
 def _make_image_bytes(width: int = 32, height: int = 32, color: tuple[int, int, int] = (255, 0, 0)) -> bytes:
@@ -283,6 +287,81 @@ async def test_create_batch_extracts_metadata(tmp_path: Path, isolated_session: 
     if prompt_hash is not None:
         assert isinstance(prompt_hash, str)
         assert len(prompt_hash) == 64
+
+
+@pytest.mark.asyncio
+async def test_manual_gemini_analysis_endpoint(tmp_path: Path, isolated_session: None) -> None:
+    storage_dir = tmp_path / "uploads"
+    processor = RecordingBatchProcessor()
+
+    app.dependency_overrides[get_storage_root] = lambda: storage_dir
+    app.dependency_overrides[get_processor] = lambda: processor
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        files = [
+            ("files", ("exif.jpg", _make_image_with_exif(), "image/jpeg")),
+            ("files", ("notes.txt", b"note", "text/plain")),
+        ]
+        create_response = await client.post("/api/v1/ingestion/batches", files=files)
+        batch_id = create_response.json()["batch_id"]
+
+        fake_result = GeminiAnalysisResult(
+            observations=[
+                Observation(
+                    source_file="exif.jpg",
+                    label="security_fence_breach",
+                    confidence=0.92,
+                    severity="high",
+                    extra={"source": "gemini", "category": "access_control"},
+                )
+            ],
+            summary=json.dumps({"observations": [{"label": "security_fence_breach"}], "warnings": []}),
+            status="ok",
+            warnings=["gemini-warning"],
+            prompt_hash="a" * 64,
+            duration_ms=512,
+            payloads=[{"security_level": "medium"}],
+            model="gemini-2.0-flash-exp",
+            provider="google-gemini",
+            prompt_version="schema-1.4-bfa",
+        )
+
+        with patch("app.api.v1.endpoints.ingestion.AdvancedAnalyzer") as analyzer_mock:
+            analyzer_instance = analyzer_mock.return_value
+            analyzer_instance.enabled = True
+            analyzer_instance.api_key = "test-key"
+            analyzer_instance.model = "gemini-2.0-flash-exp"
+            analyzer_instance.analyze.return_value = fake_result
+
+            post_response = await client.post(
+                f"/api/v1/ingestion/batches/{batch_id}/analysis",
+                json={"requested_by": "qa-tester"},
+            )
+
+        assert post_response.status_code == status.HTTP_200_OK, post_response.text
+        analysis_data = post_response.json()
+        assert analysis_data["status"] == "ok"
+        assert analysis_data["requested_by"] == "qa-tester"
+        assert analysis_data["prompt_hash"] == "a" * 64
+        assert analysis_data["observations"][0]["label"] == "security_fence_breach"
+
+        history_response = await client.get(
+            f"/api/v1/ingestion/batches/{batch_id}/analysis",
+            params={"include_history": "true"},
+        )
+        assert history_response.status_code == status.HTTP_200_OK
+        history_payload = history_response.json()
+        assert history_payload["latest"]["status"] == "ok"
+        assert len(history_payload["history"]) == 1
+
+        detail_response = await client.get(f"/api/v1/ingestion/batches/{batch_id}")
+        assert detail_response.status_code == status.HTTP_200_OK
+        detail_body = detail_response.json()
+        assert detail_body["gemini_status"] == "ok"
+        assert detail_body["gemini_prompt_hash"] == "a" * 64
+
+    app.dependency_overrides.pop(get_storage_root, None)
+    app.dependency_overrides.pop(get_processor, None)
 
 
 @pytest_asyncio.fixture

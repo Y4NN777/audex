@@ -209,9 +209,13 @@ async def replace_observations(
     source: str = "local",
     *,
     replace_existing: bool = True,
+    clear_source: str | None = None,
 ) -> None:
     if replace_existing:
-        await session.execute(delete(VisionObservation).where(VisionObservation.batch_id == batch_id))
+        delete_query = delete(VisionObservation).where(VisionObservation.batch_id == batch_id)
+        if clear_source:
+            delete_query = delete_query.where(VisionObservation.source == clear_source)
+        await session.execute(delete_query)
 
     to_persist = []
     for entry in observations:

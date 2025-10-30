@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+import logging
 from pathlib import Path
 from typing import Any, Iterable
 from uuid import uuid4
@@ -12,17 +13,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.session import get_session
-from app.models import AuditBatch
+from app.models import AuditBatch, GeminiAnalysis
 from app.repositories import batches as batch_repo
-from app.schemas.ingestion import BatchResponse, FileMetadata, ProcessingEventSchema
+from app.schemas.ingestion import (
+    BatchResponse,
+    FileMetadata,
+    GeminiAnalysisRecord,
+    GeminiAnalysisRequest,
+    GeminiAnalysisResponse,
+    ProcessingEventSchema,
+)
 from app.services.batch_processor import BatchProcessorProtocol, get_batch_processor
 from app.services.events import event_bus
 from app.services.metadata import extract_image_metadata
 from app.services.pipeline import IngestionPipeline
 from app.services.report import ReportBuilder
 from app.services.storage import allowed_content_type, sanitize_filename, save_upload_file
+from app.services.advanced_analyzer import AdvancedAnalyzer
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 ALLOWED_CONTENT_TYPES: Iterable[str] = (
     "image/",
@@ -82,6 +92,24 @@ def _observation_payload(entry: Any, source: str) -> dict[str, Any]:
         "bbox": bbox_payload,
         "extra": extra_payload,
     }
+
+
+def _serialize_gemini_record(record: GeminiAnalysis) -> GeminiAnalysisRecord:
+    return GeminiAnalysisRecord(
+        id=record.id or 0,
+        status=record.status,
+        summary=record.summary,
+        warnings=record.warnings,
+        prompt_hash=record.prompt_hash,
+        prompt_version=record.prompt_version,
+        provider=record.provider,
+        model=record.model,
+        duration_ms=record.duration_ms,
+        requested_by=record.requested_by,
+        created_at=record.created_at,
+        observations=record.observations_json,
+        raw_response=record.raw_response,
+    )
 
 
 @router.post("/batches", summary="Upload a batch of audit files", response_model=BatchResponse)
@@ -389,6 +417,117 @@ async def download_report(batch_id: str, session: AsyncSession = Depends(get_ses
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
     filename = report_path.name
     return FileResponse(report_path, media_type="application/pdf", filename=filename)
+
+
+@router.get(
+    "/batches/{batch_id}/analysis",
+    summary="Consulter l'analyse Gemini d'un lot",
+    response_model=GeminiAnalysisResponse,
+)
+async def get_batch_analysis(
+    batch_id: str,
+    include_history: bool = False,
+    session: AsyncSession = Depends(get_session),
+) -> GeminiAnalysisResponse:
+    batch = await batch_repo.get_batch(session, batch_id)
+    if not batch:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+
+    analyses = await batch_repo.list_gemini_analyses(session, batch_id)
+    if not analyses:
+        return GeminiAnalysisResponse(latest=None, history=[] if include_history else None)
+
+    latest_record = _serialize_gemini_record(analyses[0])
+    history = [_serialize_gemini_record(item) for item in analyses] if include_history else None
+    return GeminiAnalysisResponse(latest=latest_record, history=history)
+
+
+@router.post(
+    "/batches/{batch_id}/analysis",
+    summary="Relancer l'analyse Gemini d'un lot existant",
+    response_model=GeminiAnalysisRecord,
+)
+async def rerun_batch_analysis(
+    batch_id: str,
+    payload: GeminiAnalysisRequest | None = None,
+    storage_root: Path = Depends(get_storage_root),
+    session: AsyncSession = Depends(get_session),
+) -> GeminiAnalysisRecord:
+    batch = await batch_repo.get_batch(session, batch_id)
+    if not batch:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+
+    analyzer = AdvancedAnalyzer()
+    if not analyzer.enabled:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Gemini analysis disabled.")
+    if not analyzer.api_key:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Gemini API key missing.")
+
+    image_records: list[tuple[Path, str | None, str | None]] = []
+    for file in batch.files:
+        if not file.content_type or not file.content_type.startswith("image/"):
+            continue
+        stored_path = Path(file.stored_path)
+        if not stored_path.exists():
+            fallback_path = storage_root / file.filename
+            if fallback_path.exists():
+                stored_path = fallback_path
+            else:
+                logger.warning("Image %s introuvable pour batch %s.", file.stored_path, batch_id)
+                continue
+        metadata = file.metadata_json or {}
+        zone_val = metadata.get("zone") or metadata.get("area") or metadata.get("location")
+        site_type = metadata.get("site_type") or metadata.get("siteType")
+        image_records.append(
+            (
+                stored_path,
+                zone_val if isinstance(zone_val, str) else None,
+                site_type if isinstance(site_type, str) else None,
+            )
+        )
+
+    if not image_records:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No image files available for analysis.")
+
+    result = analyzer.analyze(batch_id, image_records)
+    gemini_observations = result.observations or []
+    gemini_payload = [_observation_payload(obs, "gemini") for obs in gemini_observations] if gemini_observations else None
+
+    await batch_repo.replace_observations(
+        session,
+        batch_id,
+        gemini_observations,
+        source="gemini",
+        replace_existing=True,
+        clear_source="gemini",
+    )
+
+    record = await batch_repo.add_gemini_analysis(
+        session,
+        batch_id,
+        provider=result.provider,
+        model=result.model or analyzer.model,
+        status=result.status,
+        prompt_hash=result.prompt_hash,
+        prompt_version=result.prompt_version,
+        duration_ms=result.duration_ms,
+        summary=result.summary,
+        warnings=result.warnings,
+        observations_json=gemini_payload,
+        raw_response=result.payloads,
+        requested_by=(payload.requested_by if payload else None) or "api:manual",
+    )
+
+    await batch_repo.update_batch(
+        session,
+        batch_id,
+        gemini_status=result.status,
+        gemini_summary=result.summary,
+        gemini_prompt_hash=result.prompt_hash,
+        gemini_model=result.model or analyzer.model,
+    )
+
+    return _serialize_gemini_record(record)
 
 
 def _serialize_batch(batch: AuditBatch) -> BatchResponse:

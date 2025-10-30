@@ -58,3 +58,28 @@ class BatchResponse(BaseModel):
     gemini_summary: str | None = None
     gemini_prompt_hash: str | None = None
     gemini_model: str | None = None
+
+
+class GeminiAnalysisRecord(BaseModel):
+    id: int
+    status: str
+    summary: str | None = None
+    warnings: list[str] | None = None
+    prompt_hash: str | None = None
+    prompt_version: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    duration_ms: int | None = None
+    requested_by: str | None = None
+    created_at: datetime
+    observations: list[dict[str, Any]] | None = None
+    raw_response: Any | None = None
+
+
+class GeminiAnalysisResponse(BaseModel):
+    latest: GeminiAnalysisRecord | None = None
+    history: list[GeminiAnalysisRecord] | None = None
+
+
+class GeminiAnalysisRequest(BaseModel):
+    requested_by: str | None = Field(default=None, description="Identifiant de l'utilisateur déclenchant l'analyse.")

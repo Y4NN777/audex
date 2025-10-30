@@ -5,10 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import mimetypes
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, List, Sequence, Any
+from typing import Any, Iterable, List, Sequence
 
 from app.core.config import settings
 from app.pipelines.models import Observation
@@ -260,26 +261,77 @@ class AdvancedAnalyzer:
         )
 
     def _call_gemini(self, image_path: Path, prompt: str, prompt_hash: str) -> str:
-        """Appel au modèle Gemini (stub offline pour le MVP)."""
+        """Appe au modèle Gemini (avec retries de base)."""
 
-        # Placeholder : renvoie un JSON minimal.
-        # Lorsque l'appel réel sera implémenté, cette méthode devra :
-        #  - utiliser google-generativeai ou une requête HTTP
-        #  - gérer les retries / timeouts
-        #  - retourner la chaîne JSON reçue
-        logger.debug("Gemini disabled for offline mode. Returning empty response for %s", image_path)
-        return json.dumps(
-            {
-                "security_level": "medium",
-                "perimeter_score": 5,
-                "access_control_score": 5,
-                "fire_safety_score": 5,
-                "structural_score": 5,
-                "vulnerabilities": [],
-                "security_assets": [],
-                "immediate_risks": [],
-            }
+        try:
+            import google.generativeai as genai  # type: ignore
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                "google-generativeai n'est pas installé. Ajoutez la dépendance 'google-generativeai' "
+                "ou désactivez GEMINI_ENABLED."
+            ) from exc
+
+        if not image_path.exists():
+            raise RuntimeError(f"Image {image_path} introuvable pour l'analyse Gemini.")
+
+        genai.configure(api_key=self.api_key)
+        model = genai.GenerativeModel(
+            model_name=self.model,
+            generation_config={
+                "temperature": 0.2,
+                "top_p": 0.8,
+                "top_k": 40,
+                "response_mime_type": "application/json",
+            },
         )
+
+        mime_type, _ = mimetypes.guess_type(image_path.as_posix())
+        if not mime_type:
+            mime_type = "image/jpeg"
+
+        with image_path.open("rb") as fh:
+            image_bytes = fh.read()
+
+        parts: list[Any] = [
+            {"text": prompt},
+            {"inline_data": {"mime_type": mime_type, "data": image_bytes}},
+        ]
+
+        last_error: Exception | None = None
+        attempts = self.max_retries + 1
+        for attempt in range(1, attempts + 1):
+            try:
+                logger.debug("Gemini call attempt %s for %s (hash=%s)", attempt, image_path.name, prompt_hash)
+                response = model.generate_content(
+                    [{"role": "user", "parts": parts}],
+                    request_options={"timeout": self.timeout},
+                )
+                if hasattr(response, "text") and response.text:
+                    return response.text
+                # Fallback: reconstruire la réponse depuis les candidats.
+                candidates = getattr(response, "candidates", None)
+                if candidates:
+                    candidate_content = getattr(candidates[0], "content", None)
+                    candidate_parts = getattr(candidate_content, "parts", []) if candidate_content else []
+                    texts = [getattr(part, "text", "") for part in candidate_parts if getattr(part, "text", "")]
+                    if texts:
+                        return "\n".join(texts)
+                raise RuntimeError("Réponse Gemini vide ou invalide.")
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                logger.warning(
+                    "Gemini call failed (attempt %s/%s) for %s: %s",
+                    attempt,
+                    attempts,
+                    image_path.name,
+                    exc,
+                )
+                if attempt < attempts:
+                    time.sleep(min(2 * attempt, 6))
+                    continue
+                raise
+
+        raise RuntimeError("Gemini call failed") from last_error
 
 
 def gemini_to_observations(
