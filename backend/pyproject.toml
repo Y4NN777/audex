@@ -49,3 +49,6 @@ filterwarnings = [
   "ignore:builtin type SwigPyObject has no __module__ attribute:DeprecationWarning",
   "ignore:builtin type swigvarlink has no __module__ attribute:DeprecationWarning",
 ]
+markers = [
+  "integration: tests hitting external services (e.g. Gemini)"
+]

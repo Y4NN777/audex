@@ -58,8 +58,29 @@ cd backend
 pytest
 ```
 
-- Les tests existants couvrent l’endpoint `/health`, l’ingestion multi-fichiers et le pipeline IA de base.
+- Les tests par défaut couvrent l’endpoint `/health`, l’ingestion multi-fichiers, la persistance Gemini (mockée) et le pipeline IA.
 - Ajoutez vos fixtures/datasets dans `backend/tests/data/` si nécessaire.
+
+### Tests d’intégration Gemini (optionnels)
+
+Pour vérifier la connexion au service Gemini en conditions réelles :
+
+```bash
+export GEMINI_ENABLED=true
+export GEMINI_API_KEY="xxx"
+cd backend
+pytest -m integration
+```
+
+Le test `tests/test_ingestion_integration.py` est automatiquement ignoré si la clé n’est pas configurée. Il génère une petite image, appelle l’API Gemini et vérifie que la réponse JSON est valide. N’exécutez cette commande que ponctuellement (coût/quota d’API).
+
+### Warm-up EasyOCR
+
+```bash
+make warmup-ocr
+```
+
+Télécharge les poids EasyOCR nécessaires (images, PDF, DOCX) afin d’éviter un téléchargement lors du premier traitement. À lancer une fois après l’installation ou dans vos pipelines CI/CD.
 
 ## Pipeline IA (MVP en cours d’enrichissement)
 
