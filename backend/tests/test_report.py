@@ -48,8 +48,13 @@ def _dummy_pipeline_result(tmp_path: Path) -> PipelineResult:
 def test_report_builder_generates_pdf(tmp_path: Path) -> None:
     builder = ReportBuilder(output_dir=tmp_path)
     result = _dummy_pipeline_result(tmp_path)
+    timeline = [
+        {"timestamp": "2025-01-01T10:00:00", "label": "ingestion:received", "progress": 10},
+        {"timestamp": "2025-01-01T10:02:00", "label": "vision:complete", "progress": 50},
+        {"timestamp": "2025-01-01T10:05:00", "label": "summary:complete", "progress": 90},
+    ]
 
-    artifact = builder.build_from_pipeline(result)
+    artifact = builder.build_from_pipeline(result, timeline=timeline, storage_root=tmp_path)
 
     assert artifact.path.exists()
     assert artifact.path.suffix == ".pdf"

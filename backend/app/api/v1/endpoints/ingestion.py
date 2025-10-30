@@ -341,7 +341,11 @@ async def create_batch(
             raw_response=pipeline_result.gemini_payloads,
             requested_by="pipeline:auto",
         )
-        artifact = report_builder.build_from_pipeline(pipeline_result)
+        artifact = report_builder.build_from_pipeline(
+            pipeline_result,
+            timeline=timeline_events,
+            storage_root=storage_root,
+        )
         await emit_stage(
             "report:generated",
             "Rapport PDF généré",

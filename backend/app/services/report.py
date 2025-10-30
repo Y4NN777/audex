@@ -9,7 +9,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.pipelines.models import OCRResult, Observation, PipelineResult, RiskBreakdown, RiskScore
 
@@ -32,6 +32,8 @@ class ReportContext:
     summary_prompt_hash: str | None
     summary_response_hash: str | None
     summary_warnings: list[str] | None
+    timeline: Sequence[dict[str, object]]
+    storage_root: Path | None
 
 
 @dataclass(slots=True)
@@ -61,7 +63,13 @@ class ReportBuilder:
             spaceAfter=6,
         )
 
-    def build_from_pipeline(self, result: PipelineResult) -> ReportArtifact:
+    def build_from_pipeline(
+        self,
+        result: PipelineResult,
+        *,
+        timeline: Sequence[dict[str, object]] | None = None,
+        storage_root: Path | None = None,
+    ) -> ReportArtifact:
         context = ReportContext(
             batch_id=result.batch_id,
             observations=result.observations,
@@ -79,6 +87,8 @@ class ReportBuilder:
             summary_prompt_hash=result.summary_prompt_hash,
             summary_response_hash=result.summary_response_hash,
             summary_warnings=result.summary_warnings or [],
+            timeline=timeline or [],
+            storage_root=storage_root,
         )
         filename = f"report-{context.batch_id}.pdf"
         destination = self.output_dir / filename
@@ -131,6 +141,18 @@ class ReportBuilder:
         buffer.append(Spacer(1, 12))
         buffer.append(Paragraph("Informations techniques", self.title_style))
         buffer.append(self._build_metadata_table(context))
+
+        if context.risk and context.risk.breakdown:
+            buffer.append(Spacer(1, 12))
+            buffer.append(Paragraph("Visualisation des scores", self.title_style))
+            chart = self._create_risk_chart(context)
+            if chart is not None:
+                buffer.append(chart)
+
+        if context.timeline:
+            buffer.append(Spacer(1, 12))
+            buffer.append(Paragraph("Timeline de traitement", self.title_style))
+            buffer.append(self._build_timeline_table(context.timeline))
 
         buffer.append(Spacer(1, 12))
         buffer.append(Paragraph("Visualisations (placeholder)", self.title_style))
@@ -257,6 +279,66 @@ class ReportBuilder:
                     ("ALIGN", (0, 0), (-1, -1), "LEFT"),
                     ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
                     ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#f3f4f6"), colors.white]),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ]
+            )
+        )
+        return table
+
+    def _create_risk_chart(self, context: ReportContext) -> Image | None:
+        try:
+            import io
+            import matplotlib
+
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+
+            labels = [item.label.title() for item in context.risk.breakdown]
+            scores = [item.score for item in context.risk.breakdown]
+
+            fig, ax = plt.subplots(figsize=(4, 3))
+            bars = ax.bar(labels, scores, color="#2563eb")
+            ax.set_title("Scores par catégorie")
+            ax.set_ylabel("Score")
+            ax.set_ylim(bottom=0)
+            ax.bar_label(bars, fmt="%.1f")
+            fig.tight_layout()
+
+            buffer = io.BytesIO()
+            fig.savefig(buffer, format="PNG")
+            plt.close(fig)
+            buffer.seek(0)
+
+            img = Image(buffer, width=12 * cm, height=9 * cm)
+            return img
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _build_timeline_table(self, timeline: Sequence[dict[str, object]]) -> Table:
+        data = [["Horodatage", "Étape", "Détails", "Progression"]]
+        for stage in timeline:
+            timestamp = stage.get("timestamp") or stage.get("time") or "-"
+            label = stage.get("label") or stage.get("code") or "-"
+            details = stage.get("details") or {}
+            if isinstance(details, dict) and details:
+                detail_str = ", ".join(f"{k}: {v}" for k, v in details.items())
+            else:
+                detail_str = "-"
+            progress = stage.get("progress")
+            progress_str = f"{progress}%" if progress is not None else "-"
+            data.append([str(timestamp), str(label), detail_str, progress_str])
+
+        table = Table(data, hAlign="LEFT", colWidths=[5 * cm, 5 * cm, 6 * cm, 2 * cm])
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f172a")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#f3f4f6"), colors.white]),
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
                     ("LEFTPADDING", (0, 0), (-1, -1), 6),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 6),
                 ]
