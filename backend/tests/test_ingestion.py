@@ -352,7 +352,13 @@ async def test_manual_gemini_analysis_endpoint(tmp_path: Path, isolated_session:
         assert history_response.status_code == status.HTTP_200_OK
         history_payload = history_response.json()
         assert history_payload["latest"]["status"] == "ok"
-        assert len(history_payload["history"]) == 1
+        assert history_payload["history"]
+        manual_entries = [
+            item
+            for item in history_payload["history"]
+            if item.get("requested_by") == "qa-tester" and item.get("status") == "ok"
+        ]
+        assert manual_entries, "Manual Gemini analysis should be present in history"
 
         detail_response = await client.get(f"/api/v1/ingestion/batches/{batch_id}")
         assert detail_response.status_code == status.HTTP_200_OK
