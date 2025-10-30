@@ -25,7 +25,24 @@ def _dummy_pipeline_result(tmp_path: Path) -> PipelineResult:
             RiskBreakdown(label="malveillance", severity="medium", count=1, score=10.0),
         ],
     )
-    return PipelineResult(batch_id="batch-123", observations=observations, ocr_texts=ocr_entries, risk=risk)
+    return PipelineResult(
+        batch_id="batch-123",
+        observations=observations,
+        ocr_texts=ocr_entries,
+        risk=risk,
+        gemini_status="ok",
+        gemini_provider="google-gemini",
+        gemini_duration_ms=750,
+        gemini_prompt_hash="g" * 64,
+        summary_text="Site globalement conforme avec quelques points critiques.",
+        summary_findings=["Extincteur absent zone A"],
+        summary_recommendations=["Installer un extincteur à la zone A"],
+        summary_status="ok",
+        summary_source="google-gemini",
+        summary_prompt_hash="s" * 64,
+        summary_response_hash="r" * 64,
+        summary_warnings=[],
+    )
 
 
 def test_report_builder_generates_pdf(tmp_path: Path) -> None:

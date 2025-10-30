@@ -3,16 +3,15 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Sequence
 
+from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
-from reportlab.pdfgen import canvas
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-from reportlab.lib import colors
 
-from app.pipelines.models import Observation, PipelineResult, RiskBreakdown, RiskScore
+from app.pipelines.models import OCRResult, Observation, PipelineResult, RiskBreakdown, RiskScore
 
 
 @dataclass(slots=True)
@@ -20,11 +19,19 @@ class ReportContext:
     batch_id: str
     observations: Iterable[Observation]
     risk: RiskScore | None
+    ocr_texts: Sequence[OCRResult]
+    gemini_status: str | None
+    gemini_provider: str | None
+    gemini_duration_ms: int | None
+    gemini_prompt_hash: str | None
     summary_text: str | None
     summary_findings: list[str] | None
     summary_recommendations: list[str] | None
     summary_status: str | None
     summary_source: str | None
+    summary_prompt_hash: str | None
+    summary_response_hash: str | None
+    summary_warnings: list[str] | None
 
 
 @dataclass(slots=True)
@@ -59,11 +66,19 @@ class ReportBuilder:
             batch_id=result.batch_id,
             observations=result.observations,
             risk=result.risk,
+            ocr_texts=result.ocr_texts,
+            gemini_status=result.gemini_status,
+            gemini_provider=result.gemini_provider,
+            gemini_duration_ms=result.gemini_duration_ms,
+            gemini_prompt_hash=result.gemini_prompt_hash,
             summary_text=result.summary_text,
             summary_findings=result.summary_findings or [],
             summary_recommendations=result.summary_recommendations or [],
             summary_status=result.summary_status,
             summary_source=result.summary_source,
+            summary_prompt_hash=result.summary_prompt_hash,
+            summary_response_hash=result.summary_response_hash,
+            summary_warnings=result.summary_warnings or [],
         )
         filename = f"report-{context.batch_id}.pdf"
         destination = self.output_dir / filename
@@ -77,7 +92,14 @@ class ReportBuilder:
         doc = SimpleDocTemplate(str(destination), pagesize=A4, leftMargin=2 * cm, rightMargin=2 * cm, topMargin=2 * cm)
 
         buffer.append(Paragraph("Rapport d'audit AUDEX", self.title_style))
-        buffer.append(Paragraph(f"Batch ID : <b>{context.batch_id}</b>", self.body_style))
+        buffer.append(
+            Paragraph(
+                f"Batch ID : <b>{context.batch_id}</b><br/>"
+                f"Analyse avancée : <b>{context.gemini_status or 'non exécutée'}</b>"
+                f" (source : {context.gemini_provider or '-'})",
+                self.body_style,
+            )
+        )
 
         if context.risk:
             buffer.append(Spacer(1, 12))
@@ -101,6 +123,23 @@ class ReportBuilder:
         buffer.append(Spacer(1, 12))
         buffer.append(Paragraph("Synthèse IA", self.title_style))
         buffer.extend(self._build_summary_section(context))
+
+        buffer.append(Spacer(1, 12))
+        buffer.append(Paragraph("Extraits OCR pertinents", self.title_style))
+        buffer.extend(self._build_ocr_section(context.ocr_texts))
+
+        buffer.append(Spacer(1, 12))
+        buffer.append(Paragraph("Informations techniques", self.title_style))
+        buffer.append(self._build_metadata_table(context))
+
+        buffer.append(Spacer(1, 12))
+        buffer.append(Paragraph("Visualisations (placeholder)", self.title_style))
+        buffer.append(
+            Paragraph(
+                "Les graphiques radar/cartes de chaleur seront intégrés lors de la prochaine itération (REPORT-008).",
+                self.body_style,
+            )
+        )
 
         doc.build(buffer)
 
@@ -127,14 +166,17 @@ class ReportBuilder:
         return table
 
     def _build_observation_table(self, observations: list[Observation]) -> Table:
-        data = [["Fichier", "Label", "Sévérité", "Confiance"]]
+        data = [["Fichier", "Label", "Sévérité", "Confiance", "Source", "Zone"]]
         for obs in observations:
+            extra = obs.extra if isinstance(obs.extra, dict) else {}
             data.append(
                 [
                     obs.source_file,
                     obs.label.title(),
                     obs.severity.title(),
                     f"{obs.confidence:.2f}",
+                    str(extra.get("source", "local")),
+                    str(extra.get("zone", "-")),
                 ]
             )
         table = Table(data, hAlign="LEFT")
@@ -167,15 +209,60 @@ class ReportBuilder:
             elements.append(Spacer(1, 6))
             elements.append(Paragraph("Points clés :", self.body_style))
             for finding in context.summary_findings:
-                elements.append(Paragraph(f"- {finding}", self.body_style))
+                elements.append(Paragraph(f"• {finding}", self.body_style))
 
         if context.summary_recommendations:
             elements.append(Spacer(1, 6))
             elements.append(Paragraph("Recommandations :", self.body_style))
             for rec in context.summary_recommendations:
-                elements.append(Paragraph(f"- {rec}", self.body_style))
+                elements.append(Paragraph(f"• {rec}", self.body_style))
+
+        if context.summary_warnings:
+            elements.append(Spacer(1, 6))
+            elements.append(Paragraph("Avertissements :", self.body_style))
+            for warning in context.summary_warnings:
+                elements.append(Paragraph(f"• {warning}", self.body_style))
 
         return elements
+
+    def _build_ocr_section(self, ocr_entries: Sequence[OCRResult]) -> list:
+        if not ocr_entries:
+            return [Paragraph("Aucun extrait OCR disponible.", self.body_style)]
+
+        items: list = []
+        for entry in ocr_entries[:5]:
+            text = entry.text.strip().replace("\n", " ")
+            snippet = text if len(text) <= 160 else f"{text[:157]}..."
+            items.append(Paragraph(f"<b>{entry.source_file}</b> — {snippet}", self.body_style))
+        return items
+
+    def _build_metadata_table(self, context: ReportContext) -> Table:
+        data = [
+            ["Statut Gemini", context.gemini_status or "non exécuté"],
+            ["Source Gemini", context.gemini_provider or "-"],
+            ["Durée Gemini (ms)", str(context.gemini_duration_ms or "-")],
+            ["Hash prompt Gemini", context.gemini_prompt_hash or "-"],
+            ["Statut synthèse", context.summary_status or "non générée"],
+            ["Source synthèse", context.summary_source or "-"],
+            ["Hash prompt synthèse", context.summary_prompt_hash or "-"],
+            ["Hash réponse synthèse", context.summary_response_hash or "-"],
+        ]
+        table = Table(data, hAlign="LEFT", colWidths=[6 * cm, 10 * cm])
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#f3f4f6"), colors.white]),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ]
+            )
+        )
+        return table
 
     def _compute_checksum(self, path: Path) -> str:
         hasher = hashlib.sha256()
