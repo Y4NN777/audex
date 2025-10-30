@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, field_validator
 
 
 class Settings(BaseSettings):
@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     VISION_MODEL_PATH: str = Field(default="ultralytics/yolov8n.pt")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @field_validator("OCR_LANGUAGES", mode="before")
+    @classmethod
+    def _coerce_languages(cls, value):  # noqa: D401 - simple normalizer
+        if isinstance(value, str):
+            items = [item.strip() for item in value.split(",")]
+            return [item for item in items if item]
+        return value
 
 
 settings = Settings()

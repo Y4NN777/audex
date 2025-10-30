@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -31,6 +29,7 @@ class PipelineResult:
     batch_id: str
     observations: list[Observation]
     ocr_texts: list[OCRResult]
+    ocr_engine: str | None = None
     risk: "RiskScore | None" = None
 
 

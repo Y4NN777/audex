@@ -131,6 +131,9 @@ async def test_create_batch_persists_files(tmp_path: Path, isolated_session: Non
     assert "batch_id" in payload
     assert payload["stored_at"] is not None
     assert len(payload["files"]) == 3
+    assert payload["ocr_texts"] is not None
+    assert isinstance(payload["ocr_texts"], list)
+    assert payload["ocr_texts"], "ocr_texts should contain OCR outputs"
     timeline = payload.get("timeline", [])
     assert isinstance(timeline, list)
     assert timeline, "timeline should contain backend processing stages"
@@ -175,6 +178,7 @@ async def test_get_batch_returns_persisted_metadata_and_timeline(tmp_path: Path,
     detail = detail_response.json()
     assert detail["status"] == "completed"
     assert {file["filename"] for file in detail["files"]} == {"exif.jpg", "notes.txt"}
+    assert {entry["filename"] for entry in detail["ocr_texts"]} == {"exif.jpg", "notes.txt"}
     exif_entry = next(file for file in detail["files"] if file["filename"] == "exif.jpg")
     assert exif_entry["metadata"] is not None
     codes = [event["code"] for event in detail["timeline"]]
@@ -224,6 +228,8 @@ async def test_create_batch_extracts_metadata(tmp_path: Path, isolated_session: 
     gps = metadata["gps"]
     assert pytest.approx(gps["latitude"], 0.01) == 12.5666  # approx 12 deg 34 min
     assert pytest.approx(gps["longitude"], 0.01) == 56.1166
+    ocr_texts = response.json()["ocr_texts"]
+    assert ocr_texts and ocr_texts[0]["engine"]
 @pytest_asyncio.fixture
 async def isolated_session(tmp_path: Path):
     database_url = f"sqlite+aiosqlite:///{(tmp_path / 'test.db').as_posix()}"

@@ -1,4 +1,4 @@
 """Database models."""
-from app.models.batch import AuditBatch, BatchFile, ProcessingEvent
+from app.models.batch import AuditBatch, BatchFile, OCRText, ProcessingEvent
 
-__all__ = ["AuditBatch", "BatchFile", "ProcessingEvent"]
+__all__ = ["AuditBatch", "BatchFile", "ProcessingEvent", "OCRText"]

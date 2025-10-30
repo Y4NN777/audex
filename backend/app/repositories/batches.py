@@ -3,11 +3,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Iterable, Sequence
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditBatch, BatchFile, ProcessingEvent
+from app.models import AuditBatch, BatchFile, OCRText, ProcessingEvent
 from app.schemas.ingestion import FileMetadata
 
 
@@ -101,7 +101,7 @@ async def get_batch(session: AsyncSession, batch_id: str) -> AuditBatch | None:
     result = await session.execute(select(AuditBatch).where(AuditBatch.id == batch_id))
     batch = result.scalar_one_or_none()
     if batch:
-        await session.refresh(batch, attribute_names=["files", "events"])
+        await session.refresh(batch, attribute_names=["files", "events", "ocr_texts"])
     return batch
 
 
@@ -133,4 +133,37 @@ async def add_events(
             for event in events
         ]
     )
+    await session.commit()
+
+
+async def replace_ocr_texts(
+    session: AsyncSession,
+    batch_id: str,
+    ocr_entries: Iterable,
+    engine_id: str | None = None,
+) -> None:
+    await session.execute(delete(OCRText).where(OCRText.batch_id == batch_id))
+
+    engine_name = (engine_id or "unknown").lower()
+    to_persist = []
+    for entry in ocr_entries:
+        if hasattr(entry, "source_file") and hasattr(entry, "text"):
+            filename = entry.source_file  # type: ignore[attr-defined]
+            content = entry.text  # type: ignore[attr-defined]
+        elif isinstance(entry, dict):
+            filename = entry.get("source_file") or entry.get("filename") or "unknown"
+            content = entry.get("text", "")
+        else:
+            continue
+        to_persist.append(
+            OCRText(
+                batch_id=batch_id,
+                filename=str(filename),
+                engine=engine_name,
+                content=str(content or ""),
+            )
+        )
+
+    if to_persist:
+        session.add_all(to_persist)
     await session.commit()

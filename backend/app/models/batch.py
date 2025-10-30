@@ -28,6 +28,10 @@ class AuditBatch(SQLModel, table=True):
         back_populates="batch",
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "order_by": "ProcessingEvent.timestamp"},
     )
+    ocr_texts: List["OCRText"] = Relationship(
+        back_populates="batch",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "order_by": "OCRText.created_at"},
+    )
 
 
 class BatchFile(SQLModel, table=True):
@@ -64,3 +68,16 @@ class ProcessingEvent(SQLModel, table=True):
     )
 
     batch: "AuditBatch" = Relationship(back_populates="events")
+
+
+class OCRText(SQLModel, table=True):
+    __tablename__ = "ocr_texts"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    batch_id: str = Field(foreign_key="audit_batches.id", index=True)
+    filename: str
+    engine: str = Field(default="unknown")
+    content: str = Field(default="")
+    created_at: datetime = Field(default_factory=utcnow, nullable=False)
+
+    batch: "AuditBatch" = Relationship(back_populates="ocr_texts")

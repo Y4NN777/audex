@@ -22,6 +22,12 @@ class ProcessingEventSchema(BaseModel):
     details: dict[str, Any] | None = None
 
 
+class OCRTextSchema(BaseModel):
+    filename: str
+    engine: str
+    content: str
+
+
 class BatchResponse(BaseModel):
     batch_id: str = Field(..., description="Unique identifier of the stored batch.")
     files: list[FileMetadata]
@@ -31,3 +37,4 @@ class BatchResponse(BaseModel):
     report_url: str | None = None
     last_error: str | None = None
     timeline: list[ProcessingEventSchema] | None = None
+    ocr_texts: list[OCRTextSchema] | None = None

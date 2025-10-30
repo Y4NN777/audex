@@ -19,6 +19,7 @@ class IngestionPipeline:
         self.scorer = scorer or RiskScorer()
         self._ocr_engine = get_ocr_engine()
         self._vision_engine = get_vision_engine()
+        self._ocr_engine_name = getattr(self._ocr_engine, "engine_id", "unknown")
 
     def run(
         self,
@@ -62,12 +63,9 @@ class IngestionPipeline:
 
             if file_meta.content_type.startswith("image/"):
                 observations.extend(self._vision_engine.detect(path))
-                ocr_texts.append(
-                    OCRResult(
-                        source_file=file_meta.filename,
-                        text=self._ocr_engine.extract_text(path),
-                    )
-                )
+                extracted = self._ocr_engine.extract_text(path)
+                normalized = extracted.strip() if isinstance(extracted, str) else ""
+                ocr_texts.append(OCRResult(source_file=file_meta.filename, text=normalized))
                 if progress:
                     progress(
                         "vision:complete",
@@ -152,7 +150,10 @@ class IngestionPipeline:
                 # Text files are stored directly as pseudo OCR output
                 try:
                     ocr_texts.append(
-                        OCRResult(source_file=file_meta.filename, text=path.read_text(encoding="utf-8"))
+                        OCRResult(
+                            source_file=file_meta.filename,
+                            text=path.read_text(encoding="utf-8").strip(),
+                        )
                     )
                 except Exception:
                     ocr_texts.append(OCRResult(source_file=file_meta.filename, text=""))
@@ -215,4 +216,10 @@ class IngestionPipeline:
                 },
             )
 
-        return PipelineResult(batch_id=batch_id, observations=observations, ocr_texts=ocr_texts, risk=risk)
+        return PipelineResult(
+            batch_id=batch_id,
+            observations=observations,
+            ocr_texts=ocr_texts,
+            ocr_engine=self._ocr_engine_name,
+            risk=risk,
+        )
