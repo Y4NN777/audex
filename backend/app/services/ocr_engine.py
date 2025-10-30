@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import queue
 import threading
 from logging import getLogger
 from pathlib import Path
@@ -101,6 +102,7 @@ class EasyOCREngine:
         self._reader: "easyocr.Reader | None" = None  # type: ignore[name-defined]
         self._lock = threading.Lock()
         self._initialisation_failed = False
+        self._init_timeout = max(1, settings.EASY_OCR_INIT_TIMEOUT_SECONDS)
 
     @staticmethod
     def is_available() -> bool:
@@ -157,20 +159,43 @@ class EasyOCREngine:
                     "Initialising EasyOCR reader for languages %s (gpu=off).",
                     ", ".join(self._languages),
                 )
-                try:
-                    self._reader = easyocr.Reader(  # type: ignore[attr-defined]
-                        self._languages,
-                        gpu=False,
-                        download_enabled=False,
+                result: "queue.Queue[tuple[str, object]]" = queue.Queue()
+
+                def initialise_reader() -> None:
+                    try:
+                        reader = easyocr.Reader(  # type: ignore[attr-defined]
+                            self._languages,
+                            gpu=False,
+                            download_enabled=True,
+                        )
+                        result.put(("ok", reader))
+                    except Exception as exc:  # noqa: BLE001
+                        result.put(("error", exc))
+
+                worker = threading.Thread(target=initialise_reader, name="easyocr-init", daemon=True)
+                worker.start()
+                worker.join(self._init_timeout)
+
+                if worker.is_alive():
+                    self._initialisation_failed = True
+                    logger.warning(
+                        "EasyOCR initialisation timed out after %ss for languages=%s. Falling back to legacy.",
+                        self._init_timeout,
+                        ", ".join(self._languages),
                     )
-                except Exception as exc:  # noqa: BLE001
+                    raise RuntimeError("EasyOCR initialisation timed out")
+
+                status, payload = result.get()
+                if status == "ok":
+                    self._reader = payload  # type: ignore[assignment]
+                else:
                     self._initialisation_failed = True
                     logger.warning(
                         "Unable to initialise EasyOCR (languages=%s): %s",
                         ", ".join(self._languages),
-                        exc,
+                        payload,
                     )
-                    raise
+                    raise payload  # type: ignore[misc]
         return self._reader
 
     def _extract_image(self, path: Path, filename: str) -> OCRResult:

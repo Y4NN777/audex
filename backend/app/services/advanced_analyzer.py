@@ -102,88 +102,138 @@ class AdvancedAnalyzer:
             duration_ms=duration_ms,
         )
 
+
     def _build_prompt(self, zone_name: str | None, site_type: str = "generic") -> str:
-        zone_context = f"Zone : {zone_name}" if zone_name else "Zone non spécifiée"
-        site_contexts = {
-            "datacenter": "Site critique infrastructure télécom. Risques : intrusion, sabotage, vol équipements.",
-            "bank": "Site financier. Risques : braquage, intrusion, attaque explosive.",
-            "embassy": "Site diplomatique. Risques : attentat, manifestations, intrusion.",
-            "industrial": "Site industriel. Risques : sabotage, vol, intrusion.",
-            "ngo": "Site ONG internationale. Risques : enlèvement personnel, intrusion, vol.",
-        }
-        site_info = site_contexts.get(site_type.lower(), "Site sensible nécessitant audit de sûreté.")
+        st = (site_type or "generic").lower()
+        
+        PROMPT_TEMPLATE = """\
+        Tu es un expert en sûreté, sécurité physique et hygiène opérant au Burkina Faso.
+        Analyse cette IMAGE d’audit et produis **UNIQUEMENT** un JSON valide conforme au **Schéma v1.4** ci-dessous.
 
-        return f"""Tu es un expert en sûreté/sécurité physique analysant cette photo d'audit au Burkina Faso.
+        CONTEXTE SITE :
+        - Zone : {zone_name}
+        - Type de site : {site_type}
+        - Contexte : {site_risk_context}
 
-CONTEXTE SITE :
-{zone_context}
-{site_info}
+        CONTEXTE SÉCURITAIRE BURKINA FASO :
+        - Menace terroriste active (JNIM, EIGS)
+        - Risque criminalité élevé (braquages, vols à main armée)
+        - Infrastructure sécuritaire limitée
+        - Normes internationales à respecter : OSAC / ISO 31000 / ISO 45001
 
-CONTEXTE SÉCURITAIRE BURKINA FASO :
-- Menace terroriste active (JNIM, EIGS)
-- Risque criminalité élevé (braquages, vols à main armée)
-- Infrastructure sécuritaire limitée
-- Normes internationales OSAC / ISO 31000 à respecter
+        ANALYSE À EFFECTUER (scores 0-10)
 
-ANALYSE À EFFECTUER (scores 0-10) :
+        1. PÉRIMÈTRE (perimeter_score) :
+        - État clôtures/murs (hauteur ≥ 2.5 m, intégrité, barbelés concertina)
+        - Portails/barrières (robustesse, contrôle accès)
+        - Points faibles : trous, sections basses, végétation facilitant escalade
+        - Éclairage périmétrique (zones sombres = vulnérabilité)
 
-1. PÉRIMÈTRE (perimeter_score) :
-   - État clôtures/murs (hauteur ≥2.5m, intégrité, barbelés concertina)
-   - Portails/barrières (robustesse, contrôle accès)
-   - Points faibles : trous, sections basses, végétation facilitant escalade
-   - Éclairage périmétrique (zones sombres = vulnérabilité)
+        2. CONTRÔLE D’ACCÈS (access_control_score) :
+        - Guérites/postes garde (positionnement, visibilité)
+        - Barrières physiques entrées (chicanes, plots anti-bélier, distance VBIED ≥ 25 m)
+        - Séparation piétons/véhicules
+        - Caméras surveillance (angles morts, état)
 
-2. CONTRÔLE D'ACCÈS (access_control_score) :
-   - Guérites/postes garde (positionnement, visibilité)
-   - Barrières physiques entrées (chicanes, plots anti-bélier, distance VBIED ≥25m)
-   - Séparation piétons/véhicules
-   - Caméras surveillance (angles morts, état)
+        3. SÉCURITÉ INCENDIE (fire_safety_score) :
+        - Extincteurs (présence, accessibilité, contrôle à jour)
+        - Détecteurs fumée visibles
+        - Issues secours (dégagées, signalées, éclairées)
+        - RIA/hydrants (présence, signalisation)
 
-3. SÉCURITÉ INCENDIE (fire_safety_score) :
-   - Extincteurs (présence, accessibilité, contrôle à jour)
-   - Détecteurs fumée visibles
-   - Issues secours (dégagées, signalées, éclairées)
-   - RIA/hydrants (présence, signalisation)
+        4. SOLIDITÉ STRUCTURELLE (structural_score) :
+        - Fenêtres (barreaux, films anti-effraction)
+        - Portes (blindées, serrures multipoints)
+        - Toiture/murs (points escalade possibles)
+        - Protection anti-projectiles (sacs sable, abris renforcés)
 
-4. SOLIDITÉ STRUCTURELLE (structural_score) :
-   - Fenêtres (barreaux, films anti-effraction)
-   - Portes (blindées, serrures multipoints)
-   - Toiture/murs (points escalade possibles)
-   - Protection anti-projectiles (sacs sable, abris renforcés)
+        5. HYGIÈNE (hygiene_score) :
+        - Propreté (sols, déchets, encombrements)
+        - Accès à l’eau potable (fontaines, bouteilles)
+        - Installations sanitaires (toilettes, lavabos)
+        - Gestion déchets / nuisibles / signalétique EPI
+        - Présence d’eau stagnante ou d’odeurs anormales
 
-DÉTECTE LES VULNÉRABILITÉS :
-- fence_breach, missing_barrier, unlit_area, camera_blind_spot,
-  missing_signage, weak_access_point, vegetation_risk,
-  unsecured_generator, inadequate_guard_post, missing_fire_equipment
+        DÉTECTE LES VULNÉRABILITÉS :
+        - fence_breach, missing_barrier, unlit_area, camera_blind_spot,
+        missing_signage, weak_access_point, vegetation_risk, unsecured_generator,
+        inadequate_guard_post, missing_fire_equipment,
+        waste_accumulation, standing_water, inadequate_sanitation, no_potable_water,
+        pest_infestation, blocked_circulation, missing_PPE_signage, food_safety_noncompliance
 
-RÉPONDS UNIQUEMENT EN JSON VALIDE :
-{{
-    "security_level": "low|medium|high|critical",
-    "perimeter_score": 0-10,
-    "access_control_score": 0-10,
-    "fire_safety_score": 0-10,
-    "structural_score": 0-10,
-    "vulnerabilities": [
+        RÉPONDS UNIQUEMENT EN JSON VALIDE :
         {{
-            "category": "perimeter|access|fire|structural|signage|personnel",
-            "type": "fence_breach|missing_barrier|...",
-            "description": "Description précise du problème",
+        "schema_version": "1.4",
+        "security_level": "low|medium|high|critical",
+        "perimeter_score": 0-10,
+        "access_control_score": 0-10,
+        "fire_safety_score": 0-10,
+        "structural_score": 0-10,
+        "hygiene_score": 0-10,
+        "vulnerabilities": [
+            {{
+            "category": "perimeter|access|fire|structural|signage|personnel|hygiene",
+            "type": "voir taxonomie ci-dessus",
+            "description": "fait observable, concret et bref",
             "severity": "low|medium|high|critical",
-            "location": "Localisation dans l'image",
-            "recommendation": "Action corrective recommandée"
-        }}
-    ],
-    "security_assets": [
-        {{
+            "location": "ex : 'gauche', 'fond', 'près du portail'",
+            "recommendation": "action corrective pragmatique et faisable"
+            }}
+        ],
+        "security_assets": [
+            {{
             "type": "camera|guard|barrier|lighting|fence|signage|fire_extinguisher",
             "condition": "good|degraded|non_functional",
             "coverage": "adequate|partial|insufficient"
+            }}
+        ],
+        "immediate_risks": ["...", "..."],
+        "notes": {{
+            "uncertainties": ["éléments non visibles ou ambigus"],
+            "assumptions": []
         }}
-    ],
-    "immediate_risks": [
-        "Liste des risques nécessitant action immédiate"
-    ]
-}}"""
+        }}
+
+        RÈGLES STRICTES :
+        - Retourne uniquement le JSON, sans texte ni balises.
+        - Utilise null si un élément est incertain.
+        - Ne fais pas d’hypothèses ni de reformulations.
+
+        ### Exemple attendu (hygiène + périmètre faibles)
+        {{
+        "schema_version":"1.4",
+        "security_level":"high",
+        "perimeter_score":4,
+        "access_control_score":5,
+        "fire_safety_score":6,
+        "structural_score":6,
+        "hygiene_score":3,
+        "vulnerabilities":[
+            {{"category":"perimeter","type":"fence_breach","description":"Brèche visible dans la clôture","severity":"high","location":"droite","recommendation":"Réparer la clôture et renforcer l’éclairage"}},
+            {{"category":"hygiene","type":"waste_accumulation","description":"Déchets visibles au sol","severity":"medium","location":"zone centrale","recommendation":"Installer bacs fermés et assurer nettoyage quotidien"}}
+        ],
+        "security_assets":[{{"type":"lighting","condition":"degraded","coverage":"partial"}}],
+        "immediate_risks":["Intrusion facilitée","Risque sanitaire lié aux déchets"],
+        "notes":{{"uncertainties":["État extincteurs non visible"],"assumptions":[]}}
+        }}
+        """
+
+        SITE_RISK_CONTEXTS = {
+            "datacenter": "Site critique (télécom/IT). Priorités: contrôle d’accès multi-couches, incendie, continuité électrique.",
+            "bank": "Site financier. Priorités: anti-intrusion, anti-bélier, séparation flux, angles morts caméras.",
+            "embassy": "Site diplomatique. Priorités: périmètre, contrôle foule, blast standoff, évacuation.",
+            "industrial": "Site industriel. Priorités: incendie, EPI, circulation engins, stock dangereux, périmètre large.",
+            "ngo": "Site ONG. Priorités: sûreté du personnel, visiteurs, périmètre, routines d’urgence.",
+            "generic": "Site sensible nécessitant audit pragmatique (sûreté + hygiène minimale)."
+        }
+
+
+        
+        return PROMPT_TEMPLATE.format(
+            zone_name=zone_name or "Non spécifiée",
+            site_type=st,
+            site_risk_context=SITE_RISK_CONTEXTS.get(st, SITE_RISK_CONTEXTS["generic"])
+        )
 
     def _call_gemini(self, image_path: Path, prompt: str, prompt_hash: str) -> str:
         """Appel au modèle Gemini (stub offline pour le MVP)."""

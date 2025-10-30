@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = Field(default="gemini-2.0-flash-exp")
     GEMINI_TIMEOUT_SECONDS: int = Field(default=15, description="Timeout per Gemini request (seconds)")
     GEMINI_MAX_RETRIES: int = Field(default=2, description="Maximum retries for Gemini calls")
+    EASY_OCR_INIT_TIMEOUT_SECONDS: int = Field(
+        default=8,
+        description="Timeout for EasyOCR initialisation before falling back to legacy engine",
+    )
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
