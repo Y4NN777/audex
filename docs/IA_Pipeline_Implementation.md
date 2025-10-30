@@ -31,11 +31,11 @@ Les décisions prises dans ce document respectent ces schémas pour éviter tout
 ## 3. OCR & Vision (IA-006)
 
 ### 3.1 Choix technologiques
-- **Images & photos** : **EasyOCR** (précision correcte, support CPU, installation simple).  
+- **Images & photos** : EasyOCR (support CPU) avec pré-traitements OpenCV optionnels (redressement, binarisation).  
   - `pip install easyocr` (embarque PyTorch).  
   - Langues configurables via `.env` (`OCR_LANGUAGES=fr,en`).  
 - **PDF / DOCX / TXT** :
-  - PDF : `PyMuPDF` pour texte natif + `pdf2image` + EasyOCR pour pages scannées.  
+  - PDF : `PyMuPDF` (texte natif) + `pdf2image` + EasyOCR pour pages scannées.  
   - DOCX : `python-docx`.  
   - TXT : lecture directe.
 
@@ -43,15 +43,14 @@ Les décisions prises dans ce document respectent ces schémas pour éviter tout
 1. **pipelines/ocr.py**
    - Charger EasyOCR (`easyocr.Reader(lang_list)`).
    - Définir `extract_text(file_meta)` :
-     - Route images → EasyOCR.
-     - Route PDF → extraire pages -> OCR + texte natif si disponible.
+     - Route images → (OpenCV pré-traitement +) EasyOCR.
+     - Route PDF → texte natif via `PyMuPDF` + OCR sur pages rasterisées.
      - Route DOCX → `python-docx`.
    - Retourner `OCRResult` (fichier source, texte concaténé, métriques de confiance).
    - Logging + gestion erreurs (ajout d’évènements `ocr:error` si besoin).
 
 2. **pipelines/vision.py**
-   - Intégrer YOLOv8n (`ultralytics` ou export ONNX).
-   - Prétraitement (redimensionnement, normalisation).
+   - Intégrer YOLOv8n (`ultralytics` ou export ONNX) ; OpenCV reste utile pour tâches d’appoint (dessin de bounding boxes, détection flou/luminosité).
    - Retourner `Observation` (label normalisé, sévérité estimée, score, bounding boxes en pixels).
 
 3. **services/pipeline.py**

@@ -20,7 +20,7 @@ AUDEX est une application web qui automatise l’analyse d’audits de sûreté 
 ### Architecture cible (MVP)
 - **Frontend** : React + Vite, IndexedDB pour le cache local, mise en page responsive, visualisations via Leaflet/Folium et composants graphiques.
 - **Backend** : FastAPI (Python) exposant des services REST pour ingestion, analyse, scoring, rapports et authentification.
-- **Pipeline IA** : modules indépendants pour OCR (Tesseract), vision (OpenCV), NLP léger, scikit-learn pour le scoring.
+- **Pipeline IA** : modules indépendants pour OCR (EasyOCR via PyTorch), vision (YOLOv8), synthèse LLM (Llama 3.1 via Ollama) et moteur de scoring métier.
 - **Persistance** : SQLite embarqué pour le MVP (passage planifié à PostgreSQL), stockage de médias sur filesystem local ou objet.
 - **Traçabilité** : hachage SHA-256 des rapports, Web3.py pour ancrage sur réseau blockchain (testnet).
 - **Sécurité** : JWT pour l’authentification, RBAC, chiffrement AES des caches sensibles, validation stricte des uploads.
@@ -88,12 +88,12 @@ Le document `docs/Documentation Technique/Audex_Architecture_Technique_et_Concep
 
 4. **Variables d’environnement**
    - Copier `backend/.env.example` vers `backend/.env` et renseigner les secrets.
+   - Configurer les clés IA : `OCR_ENGINE=easyocr`, `OCR_LANGUAGES=fr,en`, `VISION_MODEL_PATH=ultralytics/yolov8n.pt` (modifiable selon vos modèles).
    - Adapter `infrastructure/.env.example` pour définir ports/API URL et placeholders blockchain.
 
 5. **Prochaines étapes**
-   - Implémenter l’upload multi-fichiers et la validation (BACKEND-004, BACKEND-005).
+   - Finaliser la pipeline IA avancée et le rapport PDF enrichi (IA-006, IA-007, REPORT-008). Voir `docs/IA_Pipeline_Implementation.md` pour le plan détaillé.
    - Brancher IndexedDB/offline et liaisons API côté React (FRONT-009, FRONT-010).
-   - Structurer le pipeline IA, scoring et génération de rapport (IA-006, IA-007, REPORT-008).
 
 ---
 

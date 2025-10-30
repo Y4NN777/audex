@@ -39,7 +39,17 @@ L’API est exposée sur `http://localhost:8000`. La documentation interactive e
 
 ## Variables d’environnement
 
-Copier `.env.example` vers `.env` puis adapter les valeurs (chemins de stockage, CORS, secrets JWT…). Les paramètres sont chargés via `pydantic-settings`.
+Copier `.env.example` vers `.env` puis adapter les valeurs (chemins de stockage, CORS, secrets JWT…). Les principaux paramètres sont chargés via `pydantic-settings` :
+
+| Clé | Description |
+| --- | --- |
+| `STORAGE_PATH` | Répertoire local où sont stockés les fichiers uploadés |
+| `DATABASE_URL` | URL SQLAlchemy (par défaut `sqlite+aiosqlite:///./audex.db`) |
+| `OCR_ENGINE` | Moteur OCR (`easyocr` par défaut, fallback `tesseract`) |
+| `OCR_LANGUAGES` | Langues OCR (ex. `fr,en`) |
+| `VISION_MODEL_PATH` | Modèle YOLO utilisé (`ultralytics/yolov8n.pt` recommandé) |
+
+> Après changement des dépendances IA, relancer `pip install -e .` dans `backend/` pour installer EasyOCR, PyMuPDF, pdf2image, python-docx, etc.
 
 ## Tests
 
@@ -51,9 +61,11 @@ pytest
 - Les tests existants couvrent l’endpoint `/health`, l’ingestion multi-fichiers et le pipeline IA de base.
 - Ajoutez vos fixtures/datasets dans `backend/tests/data/` si nécessaire.
 
-## Pipeline IA (MVP stub)
+## Pipeline IA (MVP en cours d’enrichissement)
 
-Les composants OCR/Vision résident dans `app/pipelines/`. Lorsque `pytesseract` ou OpenCV ne sont pas disponibles, des heuristiques de repli renvoient néanmoins des observations structurées. Un service de scoring (`app/services/scoring.py`) agrège ensuite les observations pour produire un score de risque normalisé. Enfin, `app/services/report.py` génère un PDF minimal (ReportLab) incluant le score et la liste des anomalies.
+- Les composants OCR/Vision sont désormais accessibles via `app/services/ocr_engine.py` et `app/services/vision_engine.py`, ce qui prépare l’intégration d’EasyOCR et de YOLO (voir `docs/IA_Pipeline_Implementation.md`).
+- Tant que les modules avancés ne sont pas branchés, le backend utilise encore les heuristiques de repli (`pytesseract` + OpenCV) pour garantir une pipeline fonctionnelle.
+- Le service de scoring (`app/services/scoring.py`) calcule un score de risque et la génération de rapport (`app/services/report.py`) produit un PDF minimal.
 
 Un script d’évaluation est fourni pour valider rapidement la boucle :
 

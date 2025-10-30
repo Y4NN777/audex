@@ -6,8 +6,8 @@ from typing import Any, Callable, Iterable, List
 
 from app.pipelines.models import OCRResult, Observation, PipelineResult
 from app.services.scoring import RiskScorer
-from app.pipelines.ocr import extract_text
-from app.pipelines.vision import detect_anomalies
+from app.services.ocr_engine import get_ocr_engine
+from app.services.vision_engine import get_vision_engine
 from app.schemas.ingestion import FileMetadata
 
 
@@ -17,6 +17,8 @@ class IngestionPipeline:
     def __init__(self, storage_root: Path, scorer: RiskScorer | None = None) -> None:
         self.storage_root = storage_root
         self.scorer = scorer or RiskScorer()
+        self._ocr_engine = get_ocr_engine()
+        self._vision_engine = get_vision_engine()
 
     def run(
         self,
@@ -59,8 +61,13 @@ class IngestionPipeline:
             path = Path(file_meta.stored_path)
 
             if file_meta.content_type.startswith("image/"):
-                observations.extend(detect_anomalies(path))
-                ocr_texts.append(OCRResult(source_file=file_meta.filename, text=extract_text(path)))
+                observations.extend(self._vision_engine.detect(path))
+                ocr_texts.append(
+                    OCRResult(
+                        source_file=file_meta.filename,
+                        text=self._ocr_engine.extract_text(path),
+                    )
+                )
                 if progress:
                     progress(
                         "vision:complete",
