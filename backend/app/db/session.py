@@ -3,10 +3,11 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlmodel import SQLModel
 
 from app.core.config import settings
+from app.db.engine import get_async_engine
 
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
@@ -15,12 +16,7 @@ _session_factory: async_sessionmaker[AsyncSession] | None = None
 def get_engine() -> AsyncEngine:
     global _engine  # noqa: PLW0603
     if _engine is None:
-        _engine = create_async_engine(
-            settings.DATABASE_URL,
-            echo=False,
-            future=True,
-            pool_pre_ping=True,
-        )
+        _engine = get_async_engine()
     return _engine
 
 
