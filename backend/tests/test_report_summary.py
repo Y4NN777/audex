@@ -81,7 +81,11 @@ def test_report_summary_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "SUMMARY_FALLBACK_MODEL", "fallback-model", raising=False)
 
     service = ReportSummaryService()
-    monkeypatch.setattr(service, "_call_gemini", side_effect=RuntimeError("network-error"))
+
+    def _raise(*args, **kwargs):  # noqa: ANN001, D401
+        raise RuntimeError("network-error")
+
+    monkeypatch.setattr(service, "_call_gemini", _raise)
 
     result = service.generate(_make_request())
     assert result.status == "fallback"

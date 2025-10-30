@@ -347,54 +347,62 @@ async def test_manual_gemini_analysis_endpoint(tmp_path: Path, isolated_session:
                 ("files", ("notes.txt", b"note", "text/plain")),
             ]
             create_response = await client.post("/api/v1/ingestion/batches", files=files)
-        batch_id = create_response.json()["batch_id"]
+            batch_id = create_response.json()["batch_id"]
 
-        fake_result = GeminiAnalysisResult(
-            observations=[
-                Observation(
-                    source_file="exif.jpg",
-                    label="security_fence_breach",
-                    confidence=0.92,
-                    severity="high",
-                    extra={"source": "gemini", "category": "access_control"},
-                )
-            ],
-            summary=json.dumps({"observations": [{"label": "security_fence_breach"}], "warnings": []}),
-            status="ok",
-            warnings=["gemini-warning"],
-            prompt_hash="a" * 64,
-            duration_ms=512,
-            payloads=[{"security_level": "medium"}],
-            model="gemini-2.0-flash-exp",
-            provider="google-gemini",
-            prompt_version="schema-1.4-bfa",
-        )
-
-        with patch("app.api.v1.endpoints.ingestion.AdvancedAnalyzer") as analyzer_mock:
-            analyzer_instance = analyzer_mock.return_value
-            analyzer_instance.enabled = True
-            analyzer_instance.api_key = "test-key"
-            analyzer_instance.model = "gemini-2.0-flash-exp"
-            analyzer_instance.analyze.return_value = fake_result
-
-            post_response = await client.post(
-                f"/api/v1/ingestion/batches/{batch_id}/analysis",
-                json={"requested_by": "qa-tester"},
+            fake_result = GeminiAnalysisResult(
+                observations=[
+                    Observation(
+                        source_file="exif.jpg",
+                        label="security_fence_breach",
+                        confidence=0.92,
+                        severity="high",
+                        extra={"source": "gemini", "category": "access_control"},
+                    )
+                ],
+                summary=json.dumps({"observations": [{"label": "security_fence_breach"}], "warnings": []}),
+                status="ok",
+                warnings=["gemini-warning"],
+                prompt_hash="a" * 64,
+                duration_ms=512,
+                payloads=[{"security_level": "medium"}],
+                model="gemini-2.0-flash-exp",
+                provider="google-gemini",
+                prompt_version="schema-1.4-bfa",
             )
 
-        assert post_response.status_code == status.HTTP_200_OK, post_response.text
-        analysis_data = post_response.json()
+            with patch("app.api.v1.endpoints.ingestion.AdvancedAnalyzer") as analyzer_mock:
+                analyzer_instance = analyzer_mock.return_value
+                analyzer_instance.enabled = True
+                analyzer_instance.api_key = "test-key"
+                analyzer_instance.model = "gemini-2.0-flash-exp"
+                analyzer_instance.analyze.return_value = fake_result
+
+                post_response = await client.post(
+                    f"/api/v1/ingestion/batches/{batch_id}/analysis",
+                    json={"requested_by": "qa-tester"},
+                )
+
+                post_status = post_response.status_code
+                analysis_data = post_response.json()
+
+            history_response = await client.get(
+                f"/api/v1/ingestion/batches/{batch_id}/analysis",
+                params={"include_history": "true"},
+            )
+            history_status = history_response.status_code
+            history_payload = history_response.json()
+
+            detail_response = await client.get(f"/api/v1/ingestion/batches/{batch_id}")
+            detail_status = detail_response.status_code
+            detail_body = detail_response.json()
+
+        assert post_status == status.HTTP_200_OK, post_response.text
         assert analysis_data["status"] == "ok"
         assert analysis_data["requested_by"] == "qa-tester"
         assert analysis_data["prompt_hash"] == "a" * 64
         assert analysis_data["observations"][0]["label"] == "security_fence_breach"
 
-        history_response = await client.get(
-            f"/api/v1/ingestion/batches/{batch_id}/analysis",
-            params={"include_history": "true"},
-        )
-        assert history_response.status_code == status.HTTP_200_OK
-        history_payload = history_response.json()
+        assert history_status == status.HTTP_200_OK
         assert history_payload["latest"]["status"] == "ok"
         assert history_payload["history"]
         manual_entries = [
@@ -404,9 +412,7 @@ async def test_manual_gemini_analysis_endpoint(tmp_path: Path, isolated_session:
         ]
         assert manual_entries, "Manual Gemini analysis should be present in history"
 
-        detail_response = await client.get(f"/api/v1/ingestion/batches/{batch_id}")
-        assert detail_response.status_code == status.HTTP_200_OK
-        detail_body = detail_response.json()
+        assert detail_status == status.HTTP_200_OK
         assert detail_body["gemini_status"] == "ok"
         assert detail_body["gemini_prompt_hash"] == "a" * 64
         assert detail_body["risk_score"] is not None
