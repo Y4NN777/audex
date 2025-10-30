@@ -156,6 +156,10 @@ async def test_create_batch_persists_files(tmp_path: Path, isolated_session: Non
     if prompt_hash is not None:
         assert isinstance(prompt_hash, str)
         assert len(prompt_hash) == 64
+    risk_score = payload["risk_score"]
+    assert risk_score is not None
+    assert "total_score" in risk_score
+    assert isinstance(risk_score["breakdown"], list)
     assert payload["gemini_model"] == settings.GEMINI_MODEL
     ocr_by_filename = {entry["filename"]: entry for entry in payload["ocr_texts"]}
     assert set(ocr_by_filename.keys()) == {"test.jpg", "notes.txt", "rapport.docx", "synthese.pdf"}
@@ -231,6 +235,10 @@ async def test_get_batch_returns_persisted_metadata_and_timeline(tmp_path: Path,
     if prompt_hash is not None:
         assert isinstance(prompt_hash, str)
         assert len(prompt_hash) == 64
+    risk_detail = detail["risk_score"]
+    assert risk_detail is not None
+    assert "total_score" in risk_detail
+    assert isinstance(risk_detail["breakdown"], list)
 
 
 @pytest.mark.asyncio
@@ -287,6 +295,9 @@ async def test_create_batch_extracts_metadata(tmp_path: Path, isolated_session: 
     if prompt_hash is not None:
         assert isinstance(prompt_hash, str)
         assert len(prompt_hash) == 64
+    risk_snapshot = response_body["risk_score"]
+    assert risk_snapshot is not None
+    assert "total_score" in risk_snapshot
 
 
 @pytest.mark.asyncio
@@ -365,6 +376,7 @@ async def test_manual_gemini_analysis_endpoint(tmp_path: Path, isolated_session:
         detail_body = detail_response.json()
         assert detail_body["gemini_status"] == "ok"
         assert detail_body["gemini_prompt_hash"] == "a" * 64
+        assert detail_body["risk_score"] is not None
 
     app.dependency_overrides.pop(get_storage_root, None)
     app.dependency_overrides.pop(get_processor, None)

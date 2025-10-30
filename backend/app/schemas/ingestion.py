@@ -43,6 +43,20 @@ class VisionObservationSchema(BaseModel):
     created_at: datetime | None = None
 
 
+class RiskBreakdownSchema(BaseModel):
+    label: str
+    severity: str
+    count: int
+    score: float
+
+
+class RiskScoreSchema(BaseModel):
+    total_score: float
+    normalized_score: float
+    breakdown: list[RiskBreakdownSchema]
+    created_at: datetime
+
+
 class BatchResponse(BaseModel):
     batch_id: str = Field(..., description="Unique identifier of the stored batch.")
     files: list[FileMetadata]
@@ -58,6 +72,7 @@ class BatchResponse(BaseModel):
     gemini_summary: str | None = None
     gemini_prompt_hash: str | None = None
     gemini_model: str | None = None
+    risk_score: RiskScoreSchema | None = None
 
 
 class GeminiAnalysisRecord(BaseModel):

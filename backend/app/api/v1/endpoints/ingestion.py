@@ -22,6 +22,8 @@ from app.schemas.ingestion import (
     GeminiAnalysisRequest,
     GeminiAnalysisResponse,
     ProcessingEventSchema,
+    RiskBreakdownSchema,
+    RiskScoreSchema,
 )
 from app.services.batch_processor import BatchProcessorProtocol, get_batch_processor
 from app.services.events import event_bus
@@ -286,6 +288,16 @@ async def create_batch(
             source="local",
             replace_existing=True,
         )
+        if pipeline_result.risk:
+            await batch_repo.save_risk_score(
+                session,
+                batch_id,
+                total_score=pipeline_result.risk.total_score,
+                normalized_score=pipeline_result.risk.normalized_score,
+                breakdown=pipeline_result.risk.breakdown,
+            )
+        else:
+            await batch_repo.delete_risk_score(session, batch_id)
         gemini_observation_payload = (
             [_observation_payload(obs, "gemini") for obs in pipeline_result.observations_gemini]
             if pipeline_result.observations_gemini
@@ -581,6 +593,29 @@ def _serialize_batch(batch: AuditBatch) -> BatchResponse:
     report_url = None
     if batch.report_path:
         report_url = f"{settings.API_V1_PREFIX}/ingestion/reports/{batch.id}"
+    risk_schema = None
+    if batch.risk_score:
+        breakdown_items = batch.risk_score.breakdown or []
+        if isinstance(breakdown_items, dict):
+            breakdown_iterable = [breakdown_items]
+        else:
+            breakdown_iterable = breakdown_items if isinstance(breakdown_items, list) else []
+        breakdown_schemas = [
+            RiskBreakdownSchema(
+                label=str(item.get("label", "")),
+                severity=str(item.get("severity", "")),
+                count=int(item.get("count", 0)),
+                score=float(item.get("score", 0.0)),
+            )
+            for item in breakdown_iterable
+            if isinstance(item, dict)
+        ]
+        risk_schema = RiskScoreSchema(
+            total_score=float(batch.risk_score.total_score),
+            normalized_score=float(batch.risk_score.normalized_score),
+            breakdown=breakdown_schemas,
+            created_at=batch.risk_score.created_at,
+        )
     return BatchResponse(
         batch_id=batch.id,
         files=files,
@@ -596,4 +631,5 @@ def _serialize_batch(batch: AuditBatch) -> BatchResponse:
         gemini_summary=batch.gemini_summary,
         gemini_prompt_hash=batch.gemini_prompt_hash,
         gemini_model=batch.gemini_model,
+        risk_score=risk_schema,
     )

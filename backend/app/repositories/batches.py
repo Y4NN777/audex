@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditBatch, BatchFile, GeminiAnalysis, OCRText, ProcessingEvent, VisionObservation
+from app.models import (
+    AuditBatch,
+    BatchFile,
+    GeminiAnalysis,
+    OCRText,
+    ProcessingEvent,
+    RiskScoreEntry,
+    VisionObservation,
+)
 from app.schemas.ingestion import FileMetadata
 
 
@@ -115,7 +123,7 @@ async def get_batch(session: AsyncSession, batch_id: str) -> AuditBatch | None:
     if batch:
         await session.refresh(
             batch,
-            attribute_names=["files", "events", "ocr_texts", "observations", "gemini_analyses"],
+            attribute_names=["files", "events", "ocr_texts", "observations", "gemini_analyses", "risk_score"],
         )
     return batch
 
@@ -270,6 +278,54 @@ async def replace_observations(
 
     if to_persist:
         session.add_all(to_persist)
+    await session.commit()
+
+
+async def save_risk_score(
+    session: AsyncSession,
+    batch_id: str,
+    *,
+    total_score: float,
+    normalized_score: float,
+    breakdown: Iterable | dict | None,
+) -> RiskScoreEntry:
+    await session.execute(delete(RiskScoreEntry).where(RiskScoreEntry.batch_id == batch_id))
+
+    breakdown_payload: Any = None
+    if breakdown is None:
+        breakdown_payload = []
+    elif isinstance(breakdown, dict):
+        breakdown_payload = breakdown
+    else:
+        payload_list: list[dict[str, Any]] = []
+        for item in breakdown:
+            if hasattr(item, "label") and hasattr(item, "severity"):
+                payload_list.append(
+                    {
+                        "label": getattr(item, "label"),
+                        "severity": getattr(item, "severity"),
+                        "count": int(getattr(item, "count", 0)),
+                        "score": float(getattr(item, "score", 0.0)),
+                    }
+                )
+            else:
+                payload_list.append(item)  # assume serialisable dict
+        breakdown_payload = payload_list
+
+    entry = RiskScoreEntry(
+        batch_id=batch_id,
+        total_score=float(total_score),
+        normalized_score=float(normalized_score),
+        breakdown=breakdown_payload,
+        created_at=_utcnow(),
+    )
+    session.add(entry)
+    await session.commit()
+    return entry
+
+
+async def delete_risk_score(session: AsyncSession, batch_id: str) -> None:
+    await session.execute(delete(RiskScoreEntry).where(RiskScoreEntry.batch_id == batch_id))
     await session.commit()
 
 

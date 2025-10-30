@@ -47,6 +47,10 @@ class AuditBatch(SQLModel, table=True):
             "order_by": "GeminiAnalysis.created_at",
         },
     )
+    risk_score: Optional["RiskScoreEntry"] = Relationship(
+        back_populates="batch",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
 
 
 class BatchFile(SQLModel, table=True):
@@ -156,3 +160,18 @@ class GeminiAnalysis(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow, nullable=False)
 
     batch: "AuditBatch" = Relationship(back_populates="gemini_analyses")
+
+
+class RiskScoreEntry(SQLModel, table=True):
+    __tablename__ = "risk_scores"
+
+    batch_id: str = Field(primary_key=True, foreign_key="audit_batches.id")
+    total_score: float = Field(default=0.0)
+    normalized_score: float = Field(default=0.0)
+    breakdown: Optional[Any] = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    created_at: datetime = Field(default_factory=utcnow, nullable=False)
+
+    batch: "AuditBatch" = Relationship(back_populates="risk_score")
