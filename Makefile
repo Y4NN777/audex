@@ -7,7 +7,7 @@ FRONTEND_DIR := frontend
 BACKEND_VENV := $(BACKEND_DIR)/.venv
 BACKEND_ACTIVATE := source .venv/bin/activate
 
-.PHONY: install-backend install-frontend install-fix-frontend dev-backend dev-frontend test-backend docker-up docker-down clean-backend-venv
+.PHONY: install-backend install-frontend install-fix-frontend dev-backend dev-frontend test-backend docker-up docker-down clean-backend-venv warmup-ocr
 
 $(BACKEND_VENV):
 	cd $(BACKEND_DIR) && $(PYTHON) -m venv .venv
@@ -42,3 +42,6 @@ docker-down:
 
 clean-backend-venv:
 	rm -rf $(BACKEND_VENV)
+
+warmup-ocr:
+	cd $(BACKEND_DIR) && $(BACKEND_ACTIVATE) && python scripts/warmup_easyocr.py

@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlmodel import SQLModel
 
 from app.api.v1.endpoints.ingestion import get_processor, get_storage_root
+from app.core.config import settings
 from app.db.session import get_session
 from app.main import app
 
@@ -145,6 +146,13 @@ async def test_create_batch_persists_files(tmp_path: Path, isolated_session: Non
     assert payload["ocr_texts"] is not None
     assert isinstance(payload["ocr_texts"], list)
     assert payload["ocr_texts"], "ocr_texts should contain OCR outputs"
+    assert payload["gemini_status"] in {"disabled", "skipped", "no_insights", "ok"}
+    assert payload["gemini_summary"] is None or isinstance(payload["gemini_summary"], str)
+    prompt_hash = payload["gemini_prompt_hash"]
+    if prompt_hash is not None:
+        assert isinstance(prompt_hash, str)
+        assert len(prompt_hash) == 64
+    assert payload["gemini_model"] == settings.GEMINI_MODEL
     ocr_by_filename = {entry["filename"]: entry for entry in payload["ocr_texts"]}
     assert set(ocr_by_filename.keys()) == {"test.jpg", "notes.txt", "rapport.docx", "synthese.pdf"}
     for entry in ocr_by_filename.values():
@@ -212,6 +220,13 @@ async def test_get_batch_returns_persisted_metadata_and_timeline(tmp_path: Path,
     codes = [event["code"] for event in detail["timeline"]]
     assert "ingestion:received" in codes
     assert "report:available" in codes
+    assert detail["gemini_status"] in {"disabled", "skipped", "no_insights", "ok"}
+    assert detail["gemini_model"] == settings.GEMINI_MODEL
+    assert detail["gemini_summary"] is None or isinstance(detail["gemini_summary"], str)
+    prompt_hash = detail["gemini_prompt_hash"]
+    if prompt_hash is not None:
+        assert isinstance(prompt_hash, str)
+        assert len(prompt_hash) == 64
 
 
 @pytest.mark.asyncio
@@ -260,6 +275,14 @@ async def test_create_batch_extracts_metadata(tmp_path: Path, isolated_session: 
     assert ocr_texts and ocr_texts[0]["engine"]
     assert "confidence" in ocr_texts[0]
     assert "warnings" in ocr_texts[0]
+    response_body = response.json()
+    assert response_body["gemini_status"] in {"disabled", "skipped", "no_insights", "ok"}
+    assert response_body["gemini_model"] == settings.GEMINI_MODEL
+    assert response_body["gemini_summary"] is None or isinstance(response_body["gemini_summary"], str)
+    prompt_hash = response_body["gemini_prompt_hash"]
+    if prompt_hash is not None:
+        assert isinstance(prompt_hash, str)
+        assert len(prompt_hash) == 64
 
 
 @pytest_asyncio.fixture

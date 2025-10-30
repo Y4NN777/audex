@@ -2,7 +2,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from unittest.mock import patch
-from app.services.advanced_analyzer import AdvancedAnalyzer, GeminiAnalysisResult, build_gemini_summary, gemini_to_observations
+
+from app.core.config import settings
+from app.services.advanced_analyzer import (
+    AdvancedAnalyzer,
+    GeminiAnalysisResult,
+    build_gemini_summary,
+    gemini_to_observations,
+)
 from app.pipelines.models import Observation
 def _fake_gemini_response() -> str:
     return json.dumps(
@@ -47,6 +54,12 @@ def test_advanced_analyzer_disabled(tmp_path: Path) -> None:
         result = analyzer.analyze("batch-x", [(tmp_path, None, None)])
     assert isinstance(result, GeminiAnalysisResult)
     assert result.status == "disabled"
+    assert result.model == settings.GEMINI_MODEL
+    assert result.provider == analyzer.PROVIDER
+    assert result.prompt_version == analyzer.PROMPT_VERSION
+    assert result.payloads == []
+    assert result.prompt_hash is None
+    assert result.duration_ms is None
 @patch("app.services.advanced_analyzer.AdvancedAnalyzer._call_gemini", return_value=_fake_gemini_response())
 def test_advanced_analyzer_generates_summary(mock_call, tmp_path: Path) -> None:
     analyzer = AdvancedAnalyzer()
@@ -60,6 +73,14 @@ def test_advanced_analyzer_generates_summary(mock_call, tmp_path: Path) -> None:
     assert result.summary is not None
     payload = json.loads(result.summary)
     assert payload["observations"]
+    assert result.model == settings.GEMINI_MODEL
+    assert result.provider == analyzer.PROVIDER
+    assert result.prompt_version == analyzer.PROMPT_VERSION
+    assert result.prompt_hash is not None
+    assert len(result.prompt_hash) == 64
+    assert result.duration_ms is not None
+    assert result.payloads and len(result.payloads) == 1
+    assert result.payloads[0]["security_level"] == "critical"
 def test_build_gemini_summary_handles_empty() -> None:
     assert build_gemini_summary([], []) is None
     summary = build_gemini_summary([Observation("file", "security_level_alert", 0.9, "high")], ["warn"])

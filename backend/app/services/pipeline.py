@@ -205,5 +205,12 @@ class IngestionPipeline:
             observations_gemini=gemini_observations,
             gemini_summary=gemini_result.summary,
             gemini_status=gemini_result.status,
+            gemini_warnings=gemini_result.warnings or None,
+            gemini_prompt_hash=gemini_result.prompt_hash,
+            gemini_duration_ms=gemini_result.duration_ms,
+            gemini_payloads=gemini_result.payloads or None,
+            gemini_model=gemini_result.model,
+            gemini_provider=gemini_result.provider,
+            gemini_prompt_version=gemini_result.prompt_version,
             risk=risk,
         )

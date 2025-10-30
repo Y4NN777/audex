@@ -54,3 +54,7 @@ class BatchResponse(BaseModel):
     timeline: list[ProcessingEventSchema] | None = None
     ocr_texts: list[OCRTextSchema] | None = None
     observations: list[VisionObservationSchema] | None = None
+    gemini_status: str | None = None
+    gemini_summary: str | None = None
+    gemini_prompt_hash: str | None = None
+    gemini_model: str | None = None

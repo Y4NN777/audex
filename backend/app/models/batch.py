@@ -19,6 +19,10 @@ class AuditBatch(SQLModel, table=True):
     report_hash: Optional[str] = Field(default=None)
     report_path: Optional[str] = Field(default=None)
     last_error: Optional[str] = Field(default=None)
+    gemini_status: Optional[str] = Field(default=None)
+    gemini_summary: Optional[str] = Field(default=None)
+    gemini_prompt_hash: Optional[str] = Field(default=None)
+    gemini_model: Optional[str] = Field(default=None)
 
     files: List["BatchFile"] = Relationship(
         back_populates="batch",
@@ -35,6 +39,13 @@ class AuditBatch(SQLModel, table=True):
     observations: List["VisionObservation"] = Relationship(
         back_populates="batch",
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "order_by": "VisionObservation.created_at"},
+    )
+    gemini_analyses: List["GeminiAnalysis"] = Relationship(
+        back_populates="batch",
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "order_by": "GeminiAnalysis.created_at",
+        },
     )
 
 
@@ -115,3 +126,33 @@ class VisionObservation(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow, nullable=False)
 
     batch: "AuditBatch" = Relationship(back_populates="observations")
+
+
+class GeminiAnalysis(SQLModel, table=True):
+    __tablename__ = "gemini_analyses"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    batch_id: str = Field(foreign_key="audit_batches.id", index=True)
+    provider: str = Field(default="google-gemini")
+    model: str = Field(default="gemini-2.0-flash-exp")
+    status: str = Field(default="pending")
+    prompt_hash: Optional[str] = Field(default=None, index=True)
+    prompt_version: Optional[str] = Field(default=None)
+    duration_ms: Optional[int] = Field(default=None)
+    summary: Optional[str] = Field(default=None)
+    warnings: Optional[list[str]] = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    observations_json: Optional[Any] = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    raw_response: Optional[Any] = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    requested_by: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=utcnow, nullable=False)
+
+    batch: "AuditBatch" = Relationship(back_populates="gemini_analyses")

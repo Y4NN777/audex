@@ -7,7 +7,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditBatch, BatchFile, OCRText, ProcessingEvent, VisionObservation
+from app.models import AuditBatch, BatchFile, GeminiAnalysis, OCRText, ProcessingEvent, VisionObservation
 from app.schemas.ingestion import FileMetadata
 
 
@@ -53,6 +53,10 @@ async def update_batch(
     report_path: str | None = None,
     report_hash: str | None = None,
     last_error: str | None = None,
+    gemini_status: str | None = None,
+    gemini_summary: str | None = None,
+    gemini_prompt_hash: str | None = None,
+    gemini_model: str | None = None,
 ) -> None:
     result = await session.execute(select(AuditBatch).where(AuditBatch.id == batch_id))
     try:
@@ -68,6 +72,14 @@ async def update_batch(
         batch.report_hash = report_hash
     if last_error is not None:
         batch.last_error = last_error
+    if gemini_status is not None:
+        batch.gemini_status = gemini_status
+    if gemini_summary is not None:
+        batch.gemini_summary = gemini_summary
+    if gemini_prompt_hash is not None:
+        batch.gemini_prompt_hash = gemini_prompt_hash
+    if gemini_model is not None:
+        batch.gemini_model = gemini_model
     batch.updated_at = _utcnow()
     await session.commit()
 
@@ -101,7 +113,10 @@ async def get_batch(session: AsyncSession, batch_id: str) -> AuditBatch | None:
     result = await session.execute(select(AuditBatch).where(AuditBatch.id == batch_id))
     batch = result.scalar_one_or_none()
     if batch:
-        await session.refresh(batch, attribute_names=["files", "events", "ocr_texts", "observations"])
+        await session.refresh(
+            batch,
+            attribute_names=["files", "events", "ocr_texts", "observations", "gemini_analyses"],
+        )
     return batch
 
 
@@ -252,3 +267,56 @@ async def replace_observations(
     if to_persist:
         session.add_all(to_persist)
     await session.commit()
+
+
+async def add_gemini_analysis(
+    session: AsyncSession,
+    batch_id: str,
+    *,
+    provider: str,
+    model: str,
+    status: str,
+    prompt_hash: str | None,
+    prompt_version: str | None,
+    duration_ms: int | None,
+    summary: str | None,
+    warnings: Iterable[str] | None,
+    observations_json: Iterable | None,
+    raw_response: object | None,
+    requested_by: str | None = None,
+) -> GeminiAnalysis:
+    record = GeminiAnalysis(
+        batch_id=batch_id,
+        provider=provider,
+        model=model,
+        status=status,
+        prompt_hash=prompt_hash,
+        prompt_version=prompt_version,
+        duration_ms=duration_ms,
+        summary=summary,
+        warnings=list(warnings) if warnings is not None else None,
+        observations_json=list(observations_json) if observations_json is not None else None,
+        raw_response=raw_response,
+        requested_by=requested_by,
+    )
+    session.add(record)
+    await session.commit()
+    await session.refresh(record)
+    return record
+
+
+async def list_gemini_analyses(session: AsyncSession, batch_id: str) -> Sequence[GeminiAnalysis]:
+    result = await session.execute(
+        select(GeminiAnalysis).where(GeminiAnalysis.batch_id == batch_id).order_by(GeminiAnalysis.created_at.desc())
+    )
+    return result.scalars().all()
+
+
+async def get_latest_gemini_analysis(session: AsyncSession, batch_id: str) -> GeminiAnalysis | None:
+    result = await session.execute(
+        select(GeminiAnalysis)
+        .where(GeminiAnalysis.batch_id == batch_id)
+        .order_by(GeminiAnalysis.created_at.desc())
+        .limit(1)
+    )
+    return result.scalars().first()

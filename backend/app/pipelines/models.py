@@ -37,6 +37,13 @@ class PipelineResult:
     observations_gemini: list[Observation] | None = None
     gemini_summary: str | None = None
     gemini_status: str | None = None
+    gemini_warnings: list[str] | None = None
+    gemini_prompt_hash: str | None = None
+    gemini_duration_ms: int | None = None
+    gemini_payloads: list[dict[str, Any]] | None = None
+    gemini_model: str | None = None
+    gemini_provider: str | None = None
+    gemini_prompt_version: str | None = None
     risk: "RiskScore | None" = None
 
 

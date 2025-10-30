@@ -6,9 +6,9 @@ import hashlib
 import json
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import Iterable, List, Sequence, Any
 
 from app.core.config import settings
 from app.pipelines.models import Observation
@@ -24,6 +24,10 @@ class GeminiAnalysisResult:
     warnings: List[str]
     prompt_hash: str | None = None
     duration_ms: int | None = None
+    payloads: List[dict[str, Any]] = field(default_factory=list)
+    model: str | None = None
+    provider: str = "google-gemini"
+    prompt_version: str | None = None
 
 
 def _hash_prompt(prompt: str) -> str:
@@ -32,6 +36,9 @@ def _hash_prompt(prompt: str) -> str:
 
 class AdvancedAnalyzer:
     """Orchestrateur Gemini (moyen terme : stub offline, prêt pour API réelle)."""
+
+    PROVIDER = "google-gemini"
+    PROMPT_VERSION = "schema-1.4-bfa"
 
     def __init__(self) -> None:
         self.enabled = settings.GEMINI_ENABLED
@@ -47,7 +54,15 @@ class AdvancedAnalyzer:
         image_files: Sequence[tuple[Path, str | None, str | None]],
     ) -> GeminiAnalysisResult:
         if not self.enabled:
-            return GeminiAnalysisResult(observations=[], summary=None, status="disabled", warnings=[])
+            return GeminiAnalysisResult(
+                observations=[],
+                summary=None,
+                status="disabled",
+                warnings=[],
+                model=self.model,
+                provider=self.PROVIDER,
+                prompt_version=self.PROMPT_VERSION,
+            )
 
         if not self.api_key:
             warning = "gemini-missing-api-key"
@@ -57,12 +72,16 @@ class AdvancedAnalyzer:
                 summary=None,
                 status=status,
                 warnings=[warning],
+                model=self.model,
+                provider=self.PROVIDER,
+                prompt_version=self.PROMPT_VERSION,
             )
 
         start_time = time.perf_counter()
         warnings: list[str] = []
         observations: list[Observation] = []
         last_prompt_hash: str | None = None
+        payloads: list[dict[str, Any]] = []
 
         for image_path, zone, site_type in image_files:
             prompt = self._build_prompt(zone_name=zone, site_type=site_type or "generic")
@@ -89,6 +108,7 @@ class AdvancedAnalyzer:
                 continue
 
             observations.extend(gemini_to_observations(parsed, image_path, zone_name=zone))
+            payloads.append(parsed)
 
         duration_ms = int((time.perf_counter() - start_time) * 1000)
         summary = build_gemini_summary(observations, warnings)
@@ -100,6 +120,10 @@ class AdvancedAnalyzer:
             warnings=warnings,
             prompt_hash=last_prompt_hash,
             duration_ms=duration_ms,
+             payloads=payloads,
+             model=self.model,
+             provider=self.PROVIDER,
+             prompt_version=self.PROMPT_VERSION,
         )
 
 

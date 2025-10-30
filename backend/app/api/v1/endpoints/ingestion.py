@@ -41,6 +41,49 @@ def get_processor(storage_root: Path = Depends(get_storage_root)) -> BatchProces
     return get_batch_processor(storage_root)
 
 
+def _observation_payload(entry: Any, source: str) -> dict[str, Any]:
+    if hasattr(entry, "source_file"):
+        filename = entry.source_file  # type: ignore[attr-defined]
+        label = getattr(entry, "label", "general")
+        severity = getattr(entry, "severity", "medium")
+        confidence = getattr(entry, "confidence", None)
+        bbox = getattr(entry, "bbox", None)
+        extra = getattr(entry, "extra", None)
+    elif isinstance(entry, dict):
+        filename = entry.get("source_file") or entry.get("filename") or "unknown"
+        label = entry.get("label", "general")
+        severity = entry.get("severity", "medium")
+        confidence = entry.get("confidence")
+        bbox = entry.get("bbox")
+        extra = entry.get("extra")
+    else:
+        filename = "unknown"
+        label = "general"
+        severity = "medium"
+        confidence = None
+        bbox = None
+        extra = None
+
+    bbox_payload: list[int] | None = None
+    if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+        try:
+            bbox_payload = [int(float(coord)) for coord in bbox]
+        except (TypeError, ValueError):
+            bbox_payload = None
+
+    extra_payload = extra if isinstance(extra, dict) else None
+
+    return {
+        "source": source,
+        "source_file": str(filename),
+        "label": str(label),
+        "severity": str(severity),
+        "confidence": float(confidence) if isinstance(confidence, (int, float)) else None,
+        "bbox": bbox_payload,
+        "extra": extra_payload,
+    }
+
+
 @router.post("/batches", summary="Upload a batch of audit files", response_model=BatchResponse)
 async def create_batch(
     files: list[UploadFile],
@@ -215,6 +258,11 @@ async def create_batch(
             source="local",
             replace_existing=True,
         )
+        gemini_observation_payload = (
+            [_observation_payload(obs, "gemini") for obs in pipeline_result.observations_gemini]
+            if pipeline_result.observations_gemini
+            else None
+        )
         if pipeline_result.observations_gemini:
             await batch_repo.replace_observations(
                 session,
@@ -224,6 +272,21 @@ async def create_batch(
                 replace_existing=False,
             )
         await batch_repo.replace_ocr_texts(session, batch_id, pipeline_result.ocr_texts, pipeline_result.ocr_engine)
+        await batch_repo.add_gemini_analysis(
+            session,
+            batch_id,
+            provider=pipeline_result.gemini_provider or "google-gemini",
+            model=pipeline_result.gemini_model or settings.GEMINI_MODEL,
+            status=pipeline_result.gemini_status or ("disabled" if not settings.GEMINI_ENABLED else "unknown"),
+            prompt_hash=pipeline_result.gemini_prompt_hash,
+            prompt_version=pipeline_result.gemini_prompt_version,
+            duration_ms=pipeline_result.gemini_duration_ms,
+            summary=pipeline_result.gemini_summary,
+            warnings=pipeline_result.gemini_warnings or [],
+            observations_json=gemini_observation_payload,
+            raw_response=pipeline_result.gemini_payloads,
+            requested_by="pipeline:auto",
+        )
         artifact = report_builder.build_from_pipeline(pipeline_result)
         await emit_stage(
             "report:generated",
@@ -238,6 +301,10 @@ async def create_batch(
             status="completed",
             report_path=str(artifact.path),
             report_hash=artifact.checksum_sha256,
+            gemini_status=pipeline_result.gemini_status,
+            gemini_summary=pipeline_result.gemini_summary,
+            gemini_prompt_hash=pipeline_result.gemini_prompt_hash,
+            gemini_model=pipeline_result.gemini_model or settings.GEMINI_MODEL,
         )
         final_stage = build_stage(
             "report:available",
@@ -386,4 +453,8 @@ def _serialize_batch(batch: AuditBatch) -> BatchResponse:
         timeline=timeline,
         ocr_texts=ocr_texts,
         observations=observations or None,
+        gemini_status=batch.gemini_status,
+        gemini_summary=batch.gemini_summary,
+        gemini_prompt_hash=batch.gemini_prompt_hash,
+        gemini_model=batch.gemini_model,
     )

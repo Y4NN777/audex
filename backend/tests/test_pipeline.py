@@ -59,6 +59,13 @@ def test_pipeline_stub_processes_media(tmp_path: Path) -> None:
     assert result.risk.total_score >= 0
     assert result.risk.breakdown
     assert result.gemini_status in {"disabled", "skipped", "no_insights", "ok"}
+    assert result.gemini_warnings is None or isinstance(result.gemini_warnings, list)
+    assert result.gemini_prompt_hash is None or (
+        isinstance(result.gemini_prompt_hash, str) and len(result.gemini_prompt_hash) == 64
+    )
+    assert result.gemini_duration_ms is None or isinstance(result.gemini_duration_ms, int)
+    assert result.gemini_payloads is None or isinstance(result.gemini_payloads, list)
+    assert result.gemini_provider in {None, "google-gemini"}
 
 
 def test_pipeline_passes_zone_to_vision_engine(tmp_path: Path) -> None:
