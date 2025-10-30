@@ -78,6 +78,12 @@ class OCRText(SQLModel, table=True):
     filename: str
     engine: str = Field(default="unknown")
     content: str = Field(default="")
+    confidence: Optional[float] = Field(default=None)
+    warnings: Optional[list[str]] = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    error: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=utcnow, nullable=False)
 
     batch: "AuditBatch" = Relationship(back_populates="ocr_texts")

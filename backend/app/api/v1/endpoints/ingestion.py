@@ -72,6 +72,7 @@ async def create_batch(
         "vision:complete": 45,
         "ocr:start": 55,
         "ocr:complete": 70,
+        "ocr:error": 70,
         "analysis:complete": 75,
         "scoring:complete": 85,
         "report:generated": 95,
@@ -325,6 +326,9 @@ def _serialize_batch(batch: AuditBatch) -> BatchResponse:
             "filename": text.filename,
             "engine": text.engine,
             "content": text.content,
+            "confidence": text.confidence,
+            "warnings": text.warnings,
+            "error": text.error,
         }
         for text in batch.ocr_texts
     ]

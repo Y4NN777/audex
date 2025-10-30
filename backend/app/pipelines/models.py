@@ -22,6 +22,9 @@ class OCRResult:
 
     source_file: str
     text: str
+    confidence: float | None = None
+    warnings: list[str] = field(default_factory=list)
+    error: str | None = None
 
 
 @dataclass(slots=True)

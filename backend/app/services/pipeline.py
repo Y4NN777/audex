@@ -60,12 +60,10 @@ class IngestionPipeline:
                 )
 
             path = Path(file_meta.stored_path)
+            is_image = file_meta.content_type.startswith("image/")
 
-            if file_meta.content_type.startswith("image/"):
+            if is_image:
                 observations.extend(self._vision_engine.detect(path))
-                extracted = self._ocr_engine.extract_text(path)
-                normalized = extracted.strip() if isinstance(extracted, str) else ""
-                ocr_texts.append(OCRResult(source_file=file_meta.filename, text=normalized))
                 if progress:
                     progress(
                         "vision:complete",
@@ -75,109 +73,48 @@ class IngestionPipeline:
                             "position": index,
                             "total": total_files,
                             "progress": vision_progress,
-                        },
-                    )
-                    progress(
-                        "ocr:start",
-                        {
-                            "label": f"OCR en cours ({file_meta.filename})",
-                            "file": file_meta.filename,
-                            "position": index,
-                            "total": total_files,
-                            "progress": max(vision_progress, ocr_progress - 5),
-                        },
-                    )
-            elif file_meta.content_type == "application/pdf":
-                ocr_texts.append(
-                    OCRResult(
-                        source_file=file_meta.filename,
-                        text="[pdf-ingestion-pending]",
-                    )
-                )
-                if progress:
-                    progress(
-                        "vision:complete",
-                        {
-                            "label": f"Analyse visuelle terminée ({file_meta.filename})",
-                            "file": file_meta.filename,
-                            "position": index,
-                            "total": total_files,
-                            "progress": vision_progress,
-                        },
-                    )
-                    progress(
-                        "ocr:start",
-                        {
-                            "label": f"OCR en cours ({file_meta.filename})",
-                            "file": file_meta.filename,
-                            "position": index,
-                            "total": total_files,
-                            "progress": max(vision_progress, ocr_progress - 5),
-                        },
-                    )
-            elif file_meta.content_type in {
-                "application/msword",
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            }:
-                ocr_texts.append(
-                    OCRResult(
-                        source_file=file_meta.filename,
-                        text="[docx-ingestion-pending]",
-                    )
-                )
-                if progress:
-                    progress(
-                        "vision:complete",
-                        {
-                            "label": f"Analyse visuelle terminée ({file_meta.filename})",
-                            "file": file_meta.filename,
-                            "position": index,
-                            "total": total_files,
-                            "progress": vision_progress,
-                        },
-                    )
-                    progress(
-                        "ocr:start",
-                        {
-                            "label": f"OCR en cours ({file_meta.filename})",
-                            "file": file_meta.filename,
-                            "position": index,
-                            "total": total_files,
-                            "progress": max(vision_progress, ocr_progress - 5),
                         },
                     )
             else:
-                # Text files are stored directly as pseudo OCR output
-                try:
-                    ocr_texts.append(
-                        OCRResult(
-                            source_file=file_meta.filename,
-                            text=path.read_text(encoding="utf-8").strip(),
-                        )
-                    )
-                except Exception:
-                    ocr_texts.append(OCRResult(source_file=file_meta.filename, text=""))
                 if progress:
                     progress(
                         "vision:complete",
                         {
-                            "label": f"Analyse visuelle terminée ({file_meta.filename})",
+                            "label": f"Aucune analyse visuelle requise ({file_meta.filename})",
                             "file": file_meta.filename,
                             "position": index,
                             "total": total_files,
                             "progress": vision_progress,
                         },
                     )
-                    progress(
-                        "ocr:start",
-                        {
-                            "label": f"OCR en cours ({file_meta.filename})",
-                            "file": file_meta.filename,
-                            "position": index,
-                            "total": total_files,
-                            "progress": max(vision_progress, ocr_progress - 5),
-                        },
-                    )
+
+            if progress:
+                progress(
+                    "ocr:start",
+                    {
+                        "label": f"OCR en cours ({file_meta.filename})",
+                        "file": file_meta.filename,
+                        "position": index,
+                        "total": total_files,
+                        "progress": max(vision_progress, ocr_progress - 5),
+                    },
+                )
+
+            ocr_result = self._ocr_engine.extract(file_meta)
+            ocr_texts.append(ocr_result)
+
+            if ocr_result.error and progress:
+                progress(
+                    "ocr:error",
+                    {
+                        "label": f"Erreur OCR ({file_meta.filename})",
+                        "file": file_meta.filename,
+                        "position": index,
+                        "total": total_files,
+                        "progress": ocr_progress,
+                        "error": ocr_result.error,
+                    },
+                )
 
             if progress:
                 progress(
@@ -188,6 +125,8 @@ class IngestionPipeline:
                         "position": index,
                         "total": total_files,
                         "progress": ocr_progress,
+                        "confidence": ocr_result.confidence,
+                        "warnings": ocr_result.warnings or None,
                     },
                 )
 

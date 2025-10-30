@@ -26,6 +26,9 @@ class OCRTextSchema(BaseModel):
     filename: str
     engine: str
     content: str
+    confidence: float | None = None
+    warnings: list[str] | None = None
+    error: str | None = None
 
 
 class BatchResponse(BaseModel):

@@ -150,17 +150,35 @@ async def replace_ocr_texts(
         if hasattr(entry, "source_file") and hasattr(entry, "text"):
             filename = entry.source_file  # type: ignore[attr-defined]
             content = entry.text  # type: ignore[attr-defined]
+            confidence = getattr(entry, "confidence", None)
+            warnings = getattr(entry, "warnings", None)
+            error = getattr(entry, "error", None)
         elif isinstance(entry, dict):
             filename = entry.get("source_file") or entry.get("filename") or "unknown"
             content = entry.get("text", "")
+            confidence = entry.get("confidence")
+            warnings = entry.get("warnings")
+            error = entry.get("error")
         else:
             continue
+        warnings_iter: list[str] | None = None
+        if warnings is not None and isinstance(warnings, Iterable) and not isinstance(warnings, (str, bytes)):
+            warnings_iter = [str(item) for item in warnings if item is not None]
+
+        try:
+            confidence_value = float(confidence) if confidence is not None else None
+        except (TypeError, ValueError):
+            confidence_value = None
+
         to_persist.append(
             OCRText(
                 batch_id=batch_id,
                 filename=str(filename),
                 engine=engine_name,
                 content=str(content or ""),
+                confidence=confidence_value,
+                warnings=warnings_iter,
+                error=str(error) if error else None,
             )
         )
 

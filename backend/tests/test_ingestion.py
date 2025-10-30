@@ -93,6 +93,16 @@ def _make_docx_bytes() -> bytes:
     return buffer.getvalue()
 
 
+def _make_pdf_bytes() -> bytes:
+    fitz_module = pytest.importorskip("fitz")
+    document = fitz_module.open()
+    page = document.new_page()
+    page.insert_text((72, 72), "Extincteur manquant au poste A", fontsize=12)
+    buffer = BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
 class RecordingBatchProcessor:
     def __init__(self) -> None:
         self.calls: list[tuple[str, list[dict]]] = []
@@ -120,6 +130,7 @@ async def test_create_batch_persists_files(tmp_path: Path, isolated_session: Non
             ("files", ("test.jpg", _make_image_bytes(), "image/jpeg")),
             ("files", ("notes.txt", b"Important note", "text/plain")),
             ("files", ("rapport.docx", _make_docx_bytes(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")),
+            ("files", ("synthese.pdf", _make_pdf_bytes(), "application/pdf")),
         ]
         response = await client.post("/api/v1/ingestion/batches", files=files)
 
@@ -130,10 +141,19 @@ async def test_create_batch_persists_files(tmp_path: Path, isolated_session: Non
     payload = response.json()
     assert "batch_id" in payload
     assert payload["stored_at"] is not None
-    assert len(payload["files"]) == 3
+    assert len(payload["files"]) == 4
     assert payload["ocr_texts"] is not None
     assert isinstance(payload["ocr_texts"], list)
     assert payload["ocr_texts"], "ocr_texts should contain OCR outputs"
+    ocr_by_filename = {entry["filename"]: entry for entry in payload["ocr_texts"]}
+    assert set(ocr_by_filename.keys()) == {"test.jpg", "notes.txt", "rapport.docx", "synthese.pdf"}
+    for entry in ocr_by_filename.values():
+        assert "confidence" in entry
+        assert "warnings" in entry
+        assert "error" in entry
+    assert "Bonjour AUDEX" in ocr_by_filename["rapport.docx"]["content"]
+    if ocr_by_filename["synthese.pdf"]["content"]:
+        assert "Extincteur" in ocr_by_filename["synthese.pdf"]["content"]
     timeline = payload.get("timeline", [])
     assert isinstance(timeline, list)
     assert timeline, "timeline should contain backend processing stages"
@@ -150,7 +170,7 @@ async def test_create_batch_persists_files(tmp_path: Path, isolated_session: Non
     assert len(processor.calls) == 1
     recorded_batch_id, recorded_files = processor.calls[0]
     assert recorded_batch_id == payload["batch_id"]
-    assert len(recorded_files) == 3
+    assert len(recorded_files) == 4
 
 
 @pytest.mark.asyncio
@@ -179,6 +199,10 @@ async def test_get_batch_returns_persisted_metadata_and_timeline(tmp_path: Path,
     assert detail["status"] == "completed"
     assert {file["filename"] for file in detail["files"]} == {"exif.jpg", "notes.txt"}
     assert {entry["filename"] for entry in detail["ocr_texts"]} == {"exif.jpg", "notes.txt"}
+    for entry in detail["ocr_texts"]:
+        assert "confidence" in entry
+        assert "warnings" in entry
+        assert "error" in entry
     exif_entry = next(file for file in detail["files"] if file["filename"] == "exif.jpg")
     assert exif_entry["metadata"] is not None
     codes = [event["code"] for event in detail["timeline"]]
@@ -230,6 +254,10 @@ async def test_create_batch_extracts_metadata(tmp_path: Path, isolated_session: 
     assert pytest.approx(gps["longitude"], 0.01) == 56.1166
     ocr_texts = response.json()["ocr_texts"]
     assert ocr_texts and ocr_texts[0]["engine"]
+    assert "confidence" in ocr_texts[0]
+    assert "warnings" in ocr_texts[0]
+
+
 @pytest_asyncio.fixture
 async def isolated_session(tmp_path: Path):
     database_url = f"sqlite+aiosqlite:///{(tmp_path / 'test.db').as_posix()}"

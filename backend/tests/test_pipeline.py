@@ -48,6 +48,10 @@ def test_pipeline_stub_processes_media(tmp_path: Path) -> None:
     assert any(obs.source_file == img_path.name for obs in result.observations)
     assert len(result.ocr_texts) == 2
     assert {ocr.source_file for ocr in result.ocr_texts} == {img_path.name, text_path.name}
+    for ocr in result.ocr_texts:
+        assert isinstance(ocr.text, str)
+        assert isinstance(ocr.warnings, list)
+        assert hasattr(ocr, "confidence")
     assert result.risk is not None
     assert result.risk.batch_id == "batch-1"
     assert result.risk.total_score >= 0
