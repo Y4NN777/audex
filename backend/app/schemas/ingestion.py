@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Any
 
@@ -73,7 +75,7 @@ class BatchResponse(BaseModel):
     gemini_prompt_hash: str | None = None
     gemini_model: str | None = None
     risk_score: RiskScoreSchema | None = None
-    summary: "BatchSummarySchema" | None = None
+    summary: BatchSummarySchema | None = None
 
 
 class GeminiAnalysisRecord(BaseModel):
