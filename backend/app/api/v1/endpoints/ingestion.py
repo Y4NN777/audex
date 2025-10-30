@@ -17,6 +17,7 @@ from app.models import AuditBatch, GeminiAnalysis
 from app.repositories import batches as batch_repo
 from app.schemas.ingestion import (
     BatchResponse,
+    BatchSummarySchema,
     FileMetadata,
     GeminiAnalysisRecord,
     GeminiAnalysisRequest,
@@ -298,6 +299,19 @@ async def create_batch(
             )
         else:
             await batch_repo.delete_risk_score(session, batch_id)
+        await batch_repo.save_report_summary(
+            session,
+            batch_id,
+            summary_text=pipeline_result.summary_text,
+            findings=pipeline_result.summary_findings,
+            recommendations=pipeline_result.summary_recommendations,
+            status=pipeline_result.summary_status or "disabled",
+            source=pipeline_result.summary_source,
+            warnings=pipeline_result.summary_warnings or [],
+            prompt_hash=pipeline_result.summary_prompt_hash,
+            response_hash=pipeline_result.summary_response_hash,
+            duration_ms=pipeline_result.summary_duration_ms,
+        )
         gemini_observation_payload = (
             [_observation_payload(obs, "gemini") for obs in pipeline_result.observations_gemini]
             if pipeline_result.observations_gemini
@@ -594,6 +608,7 @@ def _serialize_batch(batch: AuditBatch) -> BatchResponse:
     if batch.report_path:
         report_url = f"{settings.API_V1_PREFIX}/ingestion/reports/{batch.id}"
     risk_schema = None
+    summary_schema = None
     if batch.risk_score:
         breakdown_items = batch.risk_score.breakdown or []
         if isinstance(breakdown_items, dict):
@@ -616,6 +631,28 @@ def _serialize_batch(batch: AuditBatch) -> BatchResponse:
             breakdown=breakdown_schemas,
             created_at=batch.risk_score.created_at,
         )
+    if batch.report_summary:
+        findings_list = []
+        if isinstance(batch.report_summary.findings, list):
+            findings_list = [str(item) for item in batch.report_summary.findings]
+        recommendations_list = []
+        if isinstance(batch.report_summary.recommendations, list):
+            recommendations_list = [str(item) for item in batch.report_summary.recommendations]
+        warnings_list = []
+        if isinstance(batch.report_summary.warnings, list):
+            warnings_list = [str(item) for item in batch.report_summary.warnings]
+        summary_schema = BatchSummarySchema(
+            status=batch.report_summary.status,
+            source=batch.report_summary.source,
+            text=batch.report_summary.summary_text,
+            findings=findings_list or None,
+            recommendations=recommendations_list or None,
+            warnings=warnings_list or None,
+            prompt_hash=batch.report_summary.prompt_hash,
+            response_hash=batch.report_summary.response_hash,
+            duration_ms=batch.report_summary.duration_ms,
+            created_at=batch.report_summary.created_at,
+        )
     return BatchResponse(
         batch_id=batch.id,
         files=files,
@@ -632,4 +669,5 @@ def _serialize_batch(batch: AuditBatch) -> BatchResponse:
         gemini_prompt_hash=batch.gemini_prompt_hash,
         gemini_model=batch.gemini_model,
         risk_score=risk_schema,
+        summary=summary_schema,
     )

@@ -73,6 +73,7 @@ class BatchResponse(BaseModel):
     gemini_prompt_hash: str | None = None
     gemini_model: str | None = None
     risk_score: RiskScoreSchema | None = None
+    summary: "BatchSummarySchema" | None = None
 
 
 class GeminiAnalysisRecord(BaseModel):
@@ -98,3 +99,19 @@ class GeminiAnalysisResponse(BaseModel):
 
 class GeminiAnalysisRequest(BaseModel):
     requested_by: str | None = Field(default=None, description="Identifiant de l'utilisateur déclenchant l'analyse.")
+
+
+class BatchSummarySchema(BaseModel):
+    status: str
+    source: str | None = None
+    text: str | None = None
+    findings: list[str] | None = None
+    recommendations: list[str] | None = None
+    warnings: list[str] | None = None
+    prompt_hash: str | None = None
+    response_hash: str | None = None
+    duration_ms: int | None = None
+    created_at: datetime | None = None
+
+
+BatchResponse.model_rebuild()

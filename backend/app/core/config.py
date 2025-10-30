@@ -27,6 +27,17 @@ class Settings(BaseSettings):
         default=True,
         description="Allow EasyOCR to download missing model weights at runtime",
     )
+    GEMINI_SUMMARY_ENABLED: bool = Field(default=False, description="Enable Gemini summary generation")
+    GEMINI_SUMMARY_REQUIRED: bool = Field(default=False, description="Treat summary failures as blocking")
+    GEMINI_SUMMARY_API_KEY: str | None = Field(default=None)
+    GEMINI_SUMMARY_MODEL: str = Field(default="gemini-2.0-flash-exp")
+    GEMINI_SUMMARY_TIMEOUT_SECONDS: int = Field(default=30, description="Timeout per summary request (seconds)")
+    GEMINI_SUMMARY_MAX_RETRIES: int = Field(default=2, description="Maximum retries for summary generation")
+    SUMMARY_FALLBACK_ENABLED: bool = Field(
+        default=False,
+        description="Enable local fallback model when Gemini summary is unavailable",
+    )
+    SUMMARY_FALLBACK_MODEL: str = Field(default="ollama/llama3.1", description="Fallback model identifier")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

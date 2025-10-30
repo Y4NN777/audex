@@ -2,6 +2,7 @@
 from app.models.batch import (
     AuditBatch,
     BatchFile,
+    BatchReport,
     GeminiAnalysis,
     OCRText,
     ProcessingEvent,
@@ -17,4 +18,5 @@ __all__ = [
     "VisionObservation",
     "GeminiAnalysis",
     "RiskScoreEntry",
+    "BatchReport",
 ]

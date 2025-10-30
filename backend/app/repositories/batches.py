@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import (
     AuditBatch,
     BatchFile,
+    BatchReport,
     GeminiAnalysis,
     OCRText,
     ProcessingEvent,
@@ -123,7 +124,15 @@ async def get_batch(session: AsyncSession, batch_id: str) -> AuditBatch | None:
     if batch:
         await session.refresh(
             batch,
-            attribute_names=["files", "events", "ocr_texts", "observations", "gemini_analyses", "risk_score"],
+            attribute_names=[
+                "files",
+                "events",
+                "ocr_texts",
+                "observations",
+                "gemini_analyses",
+                "risk_score",
+                "report_summary",
+            ],
         )
     return batch
 
@@ -363,6 +372,50 @@ async def add_gemini_analysis(
     await session.commit()
     await session.refresh(record)
     return record
+
+
+async def save_report_summary(
+    session: AsyncSession,
+    batch_id: str,
+    *,
+    summary_text: str | None,
+    findings: Iterable[str] | None,
+    recommendations: Iterable[str] | None,
+    status: str,
+    source: str | None,
+    warnings: Iterable[str] | None,
+    prompt_hash: str | None,
+    response_hash: str | None,
+    duration_ms: int | None,
+) -> BatchReport:
+    await session.execute(delete(BatchReport).where(BatchReport.batch_id == batch_id))
+
+    findings_payload = list(findings) if findings else []
+    recommendations_payload = list(recommendations) if recommendations else []
+    warnings_payload = list(warnings) if warnings else []
+
+    record = BatchReport(
+        batch_id=batch_id,
+        summary_text=summary_text,
+        findings=findings_payload,
+        recommendations=recommendations_payload,
+        status=status,
+        source=source,
+        warnings=warnings_payload or None,
+        prompt_hash=prompt_hash,
+        response_hash=response_hash,
+        duration_ms=duration_ms,
+        created_at=_utcnow(),
+    )
+    session.add(record)
+    await session.commit()
+    await session.refresh(record)
+    return record
+
+
+async def delete_report_summary(session: AsyncSession, batch_id: str) -> None:
+    await session.execute(delete(BatchReport).where(BatchReport.batch_id == batch_id))
+    await session.commit()
 
 
 async def list_gemini_analyses(session: AsyncSession, batch_id: str) -> Sequence[GeminiAnalysis]:

@@ -9,6 +9,7 @@ from app.services.scoring import RiskScorer
 from app.services.ocr_engine import get_ocr_engine
 from app.services.vision_engine import get_vision_engine
 from app.services.advanced_analyzer import AdvancedAnalyzer
+from app.services.report_summary import ReportSummaryService, SummaryRequest
 from app.schemas.ingestion import FileMetadata
 
 
@@ -20,6 +21,7 @@ class IngestionPipeline:
         storage_root: Path,
         scorer: RiskScorer | None = None,
         advanced_analyzer: AdvancedAnalyzer | None = None,
+        summary_service: ReportSummaryService | None = None,
     ) -> None:
         self.storage_root = storage_root
         self.scorer = scorer or RiskScorer()
@@ -27,6 +29,7 @@ class IngestionPipeline:
         self._vision_engine = get_vision_engine()
         self._ocr_engine_name = getattr(self._ocr_engine, "engine_id", "unknown")
         self._advanced_analyzer = advanced_analyzer or AdvancedAnalyzer()
+        self._summary_service = summary_service or ReportSummaryService()
 
     def run(
         self,
@@ -164,7 +167,7 @@ class IngestionPipeline:
                 {
                     "label": "Calcul du score de risque effectué",
                     "hasRisk": risk is not None,
-                    "score": getattr(risk, "overall", None) if risk else None,
+                    "score": getattr(risk, "total_score", None) if risk else None,
                     "progress": 85,
                 },
             )
@@ -196,6 +199,26 @@ class IngestionPipeline:
 
         combined_observations = local_observations + gemini_observations
 
+        summary_result = self._summary_service.generate(
+            SummaryRequest(
+                batch_id=batch_id,
+                risk=risk,
+                observations_local=local_observations,
+                observations_gemini=gemini_observations,
+                ocr_texts=ocr_texts,
+            )
+        )
+
+        if progress:
+            progress(
+                "summary:complete",
+                {
+                    "label": "Synthèse IA générée",
+                    "status": summary_result.status,
+                    "progress": 90,
+                },
+            )
+
         return PipelineResult(
             batch_id=batch_id,
             observations=combined_observations,
@@ -213,4 +236,13 @@ class IngestionPipeline:
             gemini_provider=gemini_result.provider,
             gemini_prompt_version=gemini_result.prompt_version,
             risk=risk,
+            summary_text=summary_result.text,
+            summary_status=summary_result.status,
+            summary_source=summary_result.source,
+            summary_findings=summary_result.findings,
+            summary_recommendations=summary_result.recommendations,
+            summary_prompt_hash=summary_result.prompt_hash,
+            summary_response_hash=summary_result.response_hash,
+            summary_duration_ms=summary_result.duration_ms,
+            summary_warnings=summary_result.warnings or None,
         )

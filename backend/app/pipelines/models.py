@@ -45,6 +45,15 @@ class PipelineResult:
     gemini_provider: str | None = None
     gemini_prompt_version: str | None = None
     risk: "RiskScore | None" = None
+    summary_text: str | None = None
+    summary_status: str | None = None
+    summary_source: str | None = None
+    summary_findings: list[str] | None = None
+    summary_recommendations: list[str] | None = None
+    summary_prompt_hash: str | None = None
+    summary_response_hash: str | None = None
+    summary_duration_ms: int | None = None
+    summary_warnings: list[str] | None = None
 
 
 @dataclass(slots=True)

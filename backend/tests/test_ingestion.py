@@ -21,6 +21,7 @@ from app.db.session import get_session
 from app.main import app
 from app.pipelines.models import Observation
 from app.services.advanced_analyzer import GeminiAnalysisResult
+from app.services.report_summary import SummaryResult
 
 
 def _make_image_bytes(width: int = 32, height: int = 32, color: tuple[int, int, int] = (255, 0, 0)) -> bytes:
@@ -130,14 +131,27 @@ async def test_create_batch_persists_files(tmp_path: Path, isolated_session: Non
     app.dependency_overrides[get_storage_root] = lambda: storage_dir
     app.dependency_overrides[get_processor] = lambda: processor
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        files = [
-            ("files", ("test.jpg", _make_image_bytes(), "image/jpeg")),
-            ("files", ("notes.txt", b"Important note", "text/plain")),
-            ("files", ("rapport.docx", _make_docx_bytes(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")),
-            ("files", ("synthese.pdf", _make_pdf_bytes(), "application/pdf")),
-        ]
-        response = await client.post("/api/v1/ingestion/batches", files=files)
+    summary_result = SummaryResult(
+        status="ok",
+        text="Synthèse test",
+        findings=["finding-a"],
+        recommendations=["rec-a"],
+        warnings=[],
+        source="google-gemini",
+        prompt_hash="s" * 64,
+        response_hash="r" * 64,
+        duration_ms=1200,
+    )
+
+    with patch("app.services.pipeline.ReportSummaryService.generate", return_value=summary_result):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            files = [
+                ("files", ("test.jpg", _make_image_bytes(), "image/jpeg")),
+                ("files", ("notes.txt", b"Important note", "text/plain")),
+                ("files", ("rapport.docx", _make_docx_bytes(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")),
+                ("files", ("synthese.pdf", _make_pdf_bytes(), "application/pdf")),
+            ]
+            response = await client.post("/api/v1/ingestion/batches", files=files)
 
     app.dependency_overrides.pop(get_storage_root, None)
     app.dependency_overrides.pop(get_processor, None)
@@ -188,6 +202,12 @@ async def test_create_batch_persists_files(tmp_path: Path, isolated_session: Non
     recorded_batch_id, recorded_files = processor.calls[0]
     assert recorded_batch_id == payload["batch_id"]
     assert len(recorded_files) == 4
+    summary_payload = payload.get("summary")
+    assert summary_payload is not None
+    assert summary_payload["status"] == "ok"
+    assert summary_payload["text"] == "Synthèse test"
+    assert summary_payload["findings"] == ["finding-a"]
+    assert summary_payload["recommendations"] == ["rec-a"]
 
 
 @pytest.mark.asyncio
@@ -308,12 +328,25 @@ async def test_manual_gemini_analysis_endpoint(tmp_path: Path, isolated_session:
     app.dependency_overrides[get_storage_root] = lambda: storage_dir
     app.dependency_overrides[get_processor] = lambda: processor
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        files = [
-            ("files", ("exif.jpg", _make_image_with_exif(), "image/jpeg")),
-            ("files", ("notes.txt", b"note", "text/plain")),
-        ]
-        create_response = await client.post("/api/v1/ingestion/batches", files=files)
+    summary_result = SummaryResult(
+        status="ok",
+        text="Synthèse test",
+        findings=["finding-a"],
+        recommendations=["rec-a"],
+        warnings=[],
+        source="google-gemini",
+        prompt_hash="s" * 64,
+        response_hash="r" * 64,
+        duration_ms=1200,
+    )
+
+    with patch("app.services.pipeline.ReportSummaryService.generate", return_value=summary_result):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            files = [
+                ("files", ("exif.jpg", _make_image_with_exif(), "image/jpeg")),
+                ("files", ("notes.txt", b"note", "text/plain")),
+            ]
+            create_response = await client.post("/api/v1/ingestion/batches", files=files)
         batch_id = create_response.json()["batch_id"]
 
         fake_result = GeminiAnalysisResult(

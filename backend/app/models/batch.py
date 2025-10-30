@@ -51,6 +51,10 @@ class AuditBatch(SQLModel, table=True):
         back_populates="batch",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+    report_summary: Optional["BatchReport"] = Relationship(
+        back_populates="batch",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
 
 
 class BatchFile(SQLModel, table=True):
@@ -175,3 +179,21 @@ class RiskScoreEntry(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow, nullable=False)
 
     batch: "AuditBatch" = Relationship(back_populates="risk_score")
+
+
+class BatchReport(SQLModel, table=True):
+    __tablename__ = "batch_reports"
+
+    batch_id: str = Field(primary_key=True, foreign_key="audit_batches.id")
+    summary_text: Optional[str] = Field(default=None)
+    findings: Optional[Any] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    recommendations: Optional[Any] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    status: str = Field(default="disabled")
+    source: Optional[str] = Field(default=None)
+    warnings: Optional[Any] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    prompt_hash: Optional[str] = Field(default=None)
+    response_hash: Optional[str] = Field(default=None)
+    duration_ms: Optional[int] = Field(default=None)
+    created_at: datetime = Field(default_factory=utcnow, nullable=False)
+
+    batch: "AuditBatch" = Relationship(back_populates="report_summary")

@@ -20,6 +20,11 @@ class ReportContext:
     batch_id: str
     observations: Iterable[Observation]
     risk: RiskScore | None
+    summary_text: str | None
+    summary_findings: list[str] | None
+    summary_recommendations: list[str] | None
+    summary_status: str | None
+    summary_source: str | None
 
 
 @dataclass(slots=True)
@@ -50,7 +55,16 @@ class ReportBuilder:
         )
 
     def build_from_pipeline(self, result: PipelineResult) -> ReportArtifact:
-        context = ReportContext(batch_id=result.batch_id, observations=result.observations, risk=result.risk)
+        context = ReportContext(
+            batch_id=result.batch_id,
+            observations=result.observations,
+            risk=result.risk,
+            summary_text=result.summary_text,
+            summary_findings=result.summary_findings or [],
+            summary_recommendations=result.summary_recommendations or [],
+            summary_status=result.summary_status,
+            summary_source=result.summary_source,
+        )
         filename = f"report-{context.batch_id}.pdf"
         destination = self.output_dir / filename
         self._render_pdf(destination, context)
@@ -83,6 +97,10 @@ class ReportBuilder:
             buffer.append(self._build_observation_table(list(context.observations)))
         else:
             buffer.append(Paragraph("Aucune observation enregistrée.", self.body_style))
+
+        buffer.append(Spacer(1, 12))
+        buffer.append(Paragraph("Synthèse IA", self.title_style))
+        buffer.extend(self._build_summary_section(context))
 
         doc.build(buffer)
 
@@ -135,6 +153,29 @@ class ReportBuilder:
             )
         )
         return table
+
+    def _build_summary_section(self, context: ReportContext) -> list:
+        elements: list = []
+        status = context.summary_status or "non générée"
+        source = context.summary_source or "-"
+        summary_text = context.summary_text or "Synthèse indisponible."
+
+        elements.append(Paragraph(f"Statut : <b>{status}</b> (source : {source})", self.body_style))
+        elements.append(Paragraph(summary_text, self.body_style))
+
+        if context.summary_findings:
+            elements.append(Spacer(1, 6))
+            elements.append(Paragraph("Points clés :", self.body_style))
+            for finding in context.summary_findings:
+                elements.append(Paragraph(f"- {finding}", self.body_style))
+
+        if context.summary_recommendations:
+            elements.append(Spacer(1, 6))
+            elements.append(Paragraph("Recommandations :", self.body_style))
+            for rec in context.summary_recommendations:
+                elements.append(Paragraph(f"- {rec}", self.body_style))
+
+        return elements
 
     def _compute_checksum(self, path: Path) -> str:
         hasher = hashlib.sha256()
