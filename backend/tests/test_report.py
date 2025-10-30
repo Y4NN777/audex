@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+import fitz
+
 from app.pipelines.models import OCRResult, Observation, PipelineResult, RiskBreakdown, RiskScore
 from app.services.report import ReportBuilder
 
@@ -66,3 +68,11 @@ def test_report_builder_generates_pdf(tmp_path: Path) -> None:
         while chunk := pdf_file.read(4096):
             hasher.update(chunk)
     assert artifact.checksum_sha256 == hasher.hexdigest()
+
+    doc = fitz.open(artifact.path)
+    text_content = " ".join(page.get_text() for page in doc)
+    doc.close()
+
+    assert "Rapport d'audit" in text_content
+    assert "Tableau de bord synthétique" in text_content
+    assert "Clauses & disclaimers" in text_content

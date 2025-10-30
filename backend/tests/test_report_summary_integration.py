@@ -51,10 +51,16 @@ def test_report_summary_live_call(tmp_path: Path) -> None:
     service = ReportSummaryService()
     result = service.generate(request)
 
-    assert result.status in {"ok", "no_content"}
-    assert result.source in {"google-gemini", "none"}  # fallback to disabled in edge cases
-    # Basic sanity checks when summary returns content
+    assert result.status in {"ok", "no_content", "fallback", "failed"}
+    assert result.source in {"google-gemini", "none", service.fallback_model}
+
     if result.status == "ok":
         assert result.text is not None and len(result.text) > 0
         assert result.prompt_hash is not None
         assert result.response_hash is not None
+    elif result.status == "fallback":
+        assert result.text is not None
+        assert result.source == service.fallback_model
+    elif result.status == "failed":
+        # Quota or network failure – ensure warning captured to aid diagnostics
+        assert result.warnings
