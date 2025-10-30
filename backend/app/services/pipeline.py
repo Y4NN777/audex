@@ -2,24 +2,31 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any, Callable, Iterable, List
+from typing import Any, Callable, Iterable, List, Sequence
 
 from app.pipelines.models import OCRResult, Observation, PipelineResult
 from app.services.scoring import RiskScorer
 from app.services.ocr_engine import get_ocr_engine
 from app.services.vision_engine import get_vision_engine
+from app.services.advanced_analyzer import AdvancedAnalyzer
 from app.schemas.ingestion import FileMetadata
 
 
 class IngestionPipeline:
     """Orchestrates OCR + vision inference to produce structured outputs."""
 
-    def __init__(self, storage_root: Path, scorer: RiskScorer | None = None) -> None:
+    def __init__(
+        self,
+        storage_root: Path,
+        scorer: RiskScorer | None = None,
+        advanced_analyzer: AdvancedAnalyzer | None = None,
+    ) -> None:
         self.storage_root = storage_root
         self.scorer = scorer or RiskScorer()
         self._ocr_engine = get_ocr_engine()
         self._vision_engine = get_vision_engine()
         self._ocr_engine_name = getattr(self._ocr_engine, "engine_id", "unknown")
+        self._advanced_analyzer = advanced_analyzer or AdvancedAnalyzer()
 
     def run(
         self,
@@ -164,14 +171,39 @@ class IngestionPipeline:
 
         local_observations = list(observations)
 
+        image_files_with_zone: list[tuple[Path, str | None]] = []
+        for meta in file_list:
+            if meta.content_type.startswith("image/"):
+                zone_name = None
+                site_type = None
+                if meta.metadata:
+                    zone_name = (
+                        meta.metadata.get("zone")
+                        or meta.metadata.get("area")
+                        or meta.metadata.get("location")
+                    )
+                    site_type = meta.metadata.get("site_type") or meta.metadata.get("siteType")
+                image_files_with_zone.append(
+                    (
+                        Path(meta.stored_path),
+                        zone_name if isinstance(zone_name, str) else None,
+                        site_type if isinstance(site_type, str) else None,
+                    )
+                )
+
+        gemini_result = self._advanced_analyzer.analyze(batch_id, image_files_with_zone)
+        gemini_observations = gemini_result.observations
+
+        combined_observations = local_observations + gemini_observations
+
         return PipelineResult(
             batch_id=batch_id,
-            observations=local_observations,
+            observations=combined_observations,
             ocr_texts=ocr_texts,
             ocr_engine=self._ocr_engine_name,
             observations_local=local_observations,
-            observations_gemini=None,
-            gemini_summary=None,
-            gemini_status="disabled",
+            observations_gemini=gemini_observations,
+            gemini_summary=gemini_result.summary,
+            gemini_status=gemini_result.status,
             risk=risk,
         )

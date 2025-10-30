@@ -215,6 +215,14 @@ async def create_batch(
             source="local",
             replace_existing=True,
         )
+        if pipeline_result.observations_gemini:
+            await batch_repo.replace_observations(
+                session,
+                batch_id,
+                pipeline_result.observations_gemini,
+                source="gemini",
+                replace_existing=False,
+            )
         await batch_repo.replace_ocr_texts(session, batch_id, pipeline_result.ocr_texts, pipeline_result.ocr_engine)
         artifact = report_builder.build_from_pipeline(pipeline_result)
         await emit_stage(
