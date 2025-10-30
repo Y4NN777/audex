@@ -63,7 +63,14 @@ class IngestionPipeline:
             is_image = file_meta.content_type.startswith("image/")
 
             if is_image:
-                observations.extend(self._vision_engine.detect(path))
+                metadata = file_meta.metadata or {}
+                zone_name = metadata.get("zone") or metadata.get("area") or metadata.get("location")
+                if isinstance(zone_name, str):
+                    zone_value = zone_name
+                else:
+                    zone_value = None
+
+                observations.extend(self._vision_engine.detect(path, zone=zone_value))
                 if progress:
                     progress(
                         "vision:complete",
@@ -155,10 +162,16 @@ class IngestionPipeline:
                 },
             )
 
+        local_observations = list(observations)
+
         return PipelineResult(
             batch_id=batch_id,
-            observations=observations,
+            observations=local_observations,
             ocr_texts=ocr_texts,
             ocr_engine=self._ocr_engine_name,
+            observations_local=local_observations,
+            observations_gemini=None,
+            gemini_summary=None,
+            gemini_status="disabled",
             risk=risk,
         )

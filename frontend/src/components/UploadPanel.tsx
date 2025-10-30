@@ -26,7 +26,7 @@ export function UploadPanel({ onUpload, isUploading, online }: Props) {
   const [previews, setPreviews] = useState<PreviewItem[]>([]);
   const timersRef = useRef<Record<string, number>>({});
 
-  const acceptedFormats = useMemo(() => ["Images (PNG, JPG)", "PDF", "TXT"].join(" • "), []);
+  const acceptedFormats = useMemo(() => ["Images (PNG, JPG)", "DOCX", "PDF", "TXT"].join(" • "), []);
 
   useEffect(() => {
     return () => {

@@ -31,6 +31,18 @@ class OCRTextSchema(BaseModel):
     error: str | None = None
 
 
+class VisionObservationSchema(BaseModel):
+    filename: str
+    label: str
+    severity: str
+    confidence: float | None = None
+    bbox: list[int] | None = None
+    source: str | None = None
+    class_name: str | None = None
+    extra: dict[str, Any] | None = None
+    created_at: datetime | None = None
+
+
 class BatchResponse(BaseModel):
     batch_id: str = Field(..., description="Unique identifier of the stored batch.")
     files: list[FileMetadata]
@@ -41,3 +53,4 @@ class BatchResponse(BaseModel):
     last_error: str | None = None
     timeline: list[ProcessingEventSchema] | None = None
     ocr_texts: list[OCRTextSchema] | None = None
+    observations: list[VisionObservationSchema] | None = None

@@ -208,6 +208,13 @@ async def create_batch(
                 progress=int(data["progress"]) if "progress" in data else None,
             ),
         )
+        await batch_repo.replace_observations(
+            session,
+            batch_id,
+            pipeline_result.observations_local or [],
+            source="local",
+            replace_existing=True,
+        )
         await batch_repo.replace_ocr_texts(session, batch_id, pipeline_result.ocr_texts, pipeline_result.ocr_engine)
         artifact = report_builder.build_from_pipeline(pipeline_result)
         await emit_stage(
@@ -332,6 +339,20 @@ def _serialize_batch(batch: AuditBatch) -> BatchResponse:
         }
         for text in batch.ocr_texts
     ]
+    observations = [
+        {
+            "filename": obs.filename,
+            "label": obs.label,
+            "severity": obs.severity,
+            "confidence": obs.confidence,
+            "bbox": obs.bbox,
+            "source": obs.source,
+            "class_name": obs.class_name,
+            "extra": obs.extra,
+            "created_at": obs.created_at,
+        }
+        for obs in batch.observations
+    ]
     timeline = [
         ProcessingEventSchema(
             code=event.code,
@@ -356,4 +377,5 @@ def _serialize_batch(batch: AuditBatch) -> BatchResponse:
         last_error=batch.last_error,
         timeline=timeline,
         ocr_texts=ocr_texts,
+        observations=observations or None,
     )

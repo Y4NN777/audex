@@ -20,11 +20,12 @@ class ScoringConfig:
                 "medium": 3.0,
                 "high": 5.0,
                 "critical": 8.0,
+                "negligible": 0.5,
             },
             label_weights={
                 "incendie": 1.4,
                 "malveillance": 1.6,
-                "hygiène": 1.2,
+                "hygiene": 1.2,
                 "cyber": 1.5,
                 "general": 1.0,
             },

@@ -32,6 +32,10 @@ class AuditBatch(SQLModel, table=True):
         back_populates="batch",
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "order_by": "OCRText.created_at"},
     )
+    observations: List["VisionObservation"] = Relationship(
+        back_populates="batch",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "order_by": "VisionObservation.created_at"},
+    )
 
 
 class BatchFile(SQLModel, table=True):
@@ -87,3 +91,27 @@ class OCRText(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow, nullable=False)
 
     batch: "AuditBatch" = Relationship(back_populates="ocr_texts")
+
+
+class VisionObservation(SQLModel, table=True):
+    __tablename__ = "vision_observations"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    batch_id: str = Field(foreign_key="audit_batches.id", index=True)
+    filename: str
+    label: str
+    severity: str
+    confidence: Optional[float] = Field(default=None)
+    bbox: Optional[list[int]] = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    source: str = Field(default="local")
+    class_name: Optional[str] = Field(default=None)
+    extra: Optional[dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    created_at: datetime = Field(default_factory=utcnow, nullable=False)
+
+    batch: "AuditBatch" = Relationship(back_populates="observations")

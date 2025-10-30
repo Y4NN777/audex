@@ -7,7 +7,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditBatch, BatchFile, OCRText, ProcessingEvent
+from app.models import AuditBatch, BatchFile, OCRText, ProcessingEvent, VisionObservation
 from app.schemas.ingestion import FileMetadata
 
 
@@ -101,7 +101,7 @@ async def get_batch(session: AsyncSession, batch_id: str) -> AuditBatch | None:
     result = await session.execute(select(AuditBatch).where(AuditBatch.id == batch_id))
     batch = result.scalar_one_or_none()
     if batch:
-        await session.refresh(batch, attribute_names=["files", "events", "ocr_texts"])
+        await session.refresh(batch, attribute_names=["files", "events", "ocr_texts", "observations"])
     return batch
 
 
@@ -179,6 +179,73 @@ async def replace_ocr_texts(
                 confidence=confidence_value,
                 warnings=warnings_iter,
                 error=str(error) if error else None,
+            )
+        )
+
+    if to_persist:
+        session.add_all(to_persist)
+    await session.commit()
+
+
+async def replace_observations(
+    session: AsyncSession,
+    batch_id: str,
+    observations: Iterable,
+    source: str = "local",
+    *,
+    replace_existing: bool = True,
+) -> None:
+    if replace_existing:
+        await session.execute(delete(VisionObservation).where(VisionObservation.batch_id == batch_id))
+
+    to_persist = []
+    for entry in observations:
+        if hasattr(entry, "source_file") and hasattr(entry, "label"):
+            filename = entry.source_file  # type: ignore[attr-defined]
+            label = entry.label  # type: ignore[attr-defined]
+            severity = getattr(entry, "severity", "medium")
+            confidence = getattr(entry, "confidence", None)
+            bbox = getattr(entry, "bbox", None)
+            extra = getattr(entry, "extra", None)
+        elif isinstance(entry, dict):
+            filename = entry.get("source_file") or entry.get("filename") or "unknown"
+            label = entry.get("label", "general")
+            severity = entry.get("severity", "medium")
+            confidence = entry.get("confidence")
+            bbox = entry.get("bbox")
+            extra = entry.get("extra")
+        else:
+            continue
+
+        try:
+            confidence_value = float(confidence) if confidence is not None else None
+        except (TypeError, ValueError):
+            confidence_value = None
+
+        bbox_value = None
+        if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+            try:
+                bbox_value = [int(float(coord)) for coord in bbox]
+            except (TypeError, ValueError):
+                bbox_value = None
+
+        class_name = None
+        extra_payload = None
+        if isinstance(extra, dict):
+            extra_payload = extra
+            class_name = extra.get("class_name")
+
+        to_persist.append(
+            VisionObservation(
+                batch_id=batch_id,
+                filename=str(filename),
+                label=str(label),
+                severity=str(severity),
+                confidence=confidence_value,
+                bbox=bbox_value,
+                source=source,
+                class_name=class_name,
+                extra=extra_payload,
             )
         )
 

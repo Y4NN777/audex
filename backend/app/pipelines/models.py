@@ -33,6 +33,10 @@ class PipelineResult:
     observations: list[Observation]
     ocr_texts: list[OCRResult]
     ocr_engine: str | None = None
+    observations_local: list[Observation] | None = None
+    observations_gemini: list[Observation] | None = None
+    gemini_summary: str | None = None
+    gemini_status: str | None = None
     risk: "RiskScore | None" = None
 
 

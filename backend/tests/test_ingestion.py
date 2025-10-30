@@ -159,6 +159,7 @@ async def test_create_batch_persists_files(tmp_path: Path, isolated_session: Non
     assert timeline, "timeline should contain backend processing stages"
     assert timeline[-1]["code"] == "report:available"
     assert payload["report_url"] == f"/api/v1/ingestion/reports/{payload['batch_id']}"
+    assert "observations" in payload
 
     for file_info in payload["files"]:
         stored_path = Path(file_info["stored_path"])
@@ -198,6 +199,9 @@ async def test_get_batch_returns_persisted_metadata_and_timeline(tmp_path: Path,
     detail = detail_response.json()
     assert detail["status"] == "completed"
     assert {file["filename"] for file in detail["files"]} == {"exif.jpg", "notes.txt"}
+    assert "observations" in detail
+    observations = detail["observations"]
+    assert all(obs["source"] in {"local", "gemini"} for obs in observations)
     assert {entry["filename"] for entry in detail["ocr_texts"]} == {"exif.jpg", "notes.txt"}
     for entry in detail["ocr_texts"]:
         assert "confidence" in entry
