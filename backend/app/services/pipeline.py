@@ -48,6 +48,17 @@ class IngestionPipeline:
 
         logger.info("Pipeline run started for batch %s (%d file(s))", batch_id, total_files)
 
+        def emit(stage: str, data: dict[str, Any]) -> None:
+            if progress:
+                progress(stage, data)
+
+        ocr_status_callback = getattr(self._ocr_engine, "set_status_callback", None)
+        if callable(ocr_status_callback):
+            try:
+                ocr_status_callback(emit)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Unable to attach OCR status callback: %s", exc)
+
         if progress:
             progress(
                 "analysis:start",
@@ -57,6 +68,9 @@ class IngestionPipeline:
                     "progress": 25,
                 },
             )
+
+        status_interval = 30.0
+        last_status_update = time.monotonic() - status_interval
 
         for index, file_meta in enumerate(file_list, start=1):
             if progress:
@@ -159,6 +173,20 @@ class IngestionPipeline:
                     },
                 )
 
+                now = time.monotonic()
+                if now - last_status_update >= status_interval:
+                    progress(
+                        "analysis:status",
+                        {
+                            "label": f"Analyse en cours ({file_meta.filename})",
+                            "file": file_meta.filename,
+                            "position": index,
+                            "total": total_files,
+                            "progress": max(ocr_progress, 55),
+                        },
+                    )
+                    last_status_update = now
+
             time.sleep(0.2)
 
         if progress:
@@ -241,7 +269,7 @@ class IngestionPipeline:
                 },
             )
 
-        return PipelineResult(
+        result = PipelineResult(
             batch_id=batch_id,
             observations=combined_observations,
             ocr_texts=ocr_texts,
@@ -268,3 +296,11 @@ class IngestionPipeline:
             summary_duration_ms=summary_result.duration_ms,
             summary_warnings=summary_result.warnings or None,
         )
+
+        if callable(ocr_status_callback):
+            try:
+                ocr_status_callback(None)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Unable to reset OCR status callback: %s", exc)
+
+        return result

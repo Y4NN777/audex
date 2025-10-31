@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from logging import getLogger
 from pathlib import Path
-from typing import Protocol, Sequence
+from typing import Any, Callable, Protocol, Sequence
 
 try:  # pragma: no cover - optional dependency
     import numpy as np
@@ -101,10 +101,14 @@ class EasyOCREngine:
         self._reader: "easyocr.Reader | None" = None  # type: ignore[name-defined]
         self._lock = threading.Lock()
         self._initialisation_failed = False
+        self._status_callback: Callable[[str, dict[str, Any]], None] | None = None
 
     @staticmethod
     def is_available() -> bool:
         return easyocr is not None
+
+    def set_status_callback(self, callback: Callable[[str, dict[str, Any]], None] | None) -> None:
+        self._status_callback = callback
 
     def extract(self, file_meta: FileMetadata) -> OCRResult:
         path = Path(file_meta.stored_path)
@@ -157,12 +161,28 @@ class EasyOCREngine:
                     "Initialising EasyOCR reader for languages %s (gpu=off).",
                     ", ".join(self._languages),
                 )
+                if self._status_callback:
+                    self._status_callback(
+                        "ocr:warmup:start",
+                        {
+                            "label": "Initialisation du moteur OCR (EasyOCR)",
+                            "languages": list(self._languages),
+                        },
+                    )
                 try:
                     self._reader = easyocr.Reader(  # type: ignore[attr-defined]
                         self._languages,
                         gpu=False,
                         download_enabled=settings.EASY_OCR_DOWNLOAD_ENABLED,
                     )
+                    if self._status_callback:
+                        self._status_callback(
+                            "ocr:warmup:complete",
+                            {
+                                "label": "Moteur OCR initialisé",
+                                "languages": list(self._languages),
+                            },
+                        )
                 except Exception as exc:  # noqa: BLE001
                     self._initialisation_failed = True
                     logger.warning(
@@ -170,6 +190,15 @@ class EasyOCREngine:
                         ", ".join(self._languages),
                         exc,
                     )
+                    if self._status_callback:
+                        self._status_callback(
+                            "ocr:warmup:error",
+                            {
+                                "label": "Erreur lors du chargement EasyOCR",
+                                "languages": list(self._languages),
+                                "error": str(exc),
+                            },
+                        )
                     raise
         return self._reader
 

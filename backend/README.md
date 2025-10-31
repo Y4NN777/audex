@@ -89,6 +89,11 @@ Télécharge les poids EasyOCR nécessaires (images, PDF, DOCX) afin d’éviter
 - Analyse avancée Gemini (`app/services/advanced_analyzer.py`) + synthèse IA (`app/services/report_summary.py`). Les résumés sont stockés dans `batch_reports` et injectés dans la réponse API (`BatchResponse.summary`) ainsi que dans le PDF (`app/services/report.py`).
 - Rapport PDF enrichi (score, observations locales/Gemini, synthèse IA) généré par `ReportBuilder`.
 
+### Ingestion asynchrone
+- L’endpoint `POST /api/v1/ingestion/batches` retourne immédiatement (202) après la persistance des fichiers et la mise en file du pipeline.
+- Les étapes suivantes (vision, OCR, Gemini, rapport) sont exécutées en tâche de fond et publiées via SSE (`/api/v1/ingestion/events`).
+- Les clients doivent interroger `GET /api/v1/ingestion/batches/{id}` ou consommer le flux SSE pour connaître l’état actuel.
+
 ### Configuration Gemini
 
 Ajouter dans `backend/.env` :

@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import mimetypes
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -273,7 +274,7 @@ class AdvancedAnalyzer:
             site_risk_context=SITE_RISK_CONTEXTS.get(st, SITE_RISK_CONTEXTS["generic"])
         )
 
-    def _call_gemini(self, image_path: Path, prompt: str, prompt_hash: str) -> str:
+def _call_gemini(self, image_path: Path, prompt: str, prompt_hash: str) -> str:
         """Appe au modèle Gemini (avec retries de base)."""
 
         try:
@@ -332,6 +333,7 @@ class AdvancedAnalyzer:
                 raise RuntimeError("Réponse Gemini vide ou invalide.")
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
+                retry_delay = _extract_retry_delay_seconds(exc)
                 logger.warning(
                     "Gemini call failed (attempt %s/%s) for %s: %s",
                     attempt,
@@ -340,11 +342,39 @@ class AdvancedAnalyzer:
                     exc,
                 )
                 if attempt < attempts:
-                    time.sleep(min(2 * attempt, 6))
+                    if retry_delay is not None and retry_delay > 0:
+                        sleep_duration = min(retry_delay + 0.5, 90.0)
+                        logger.info(
+                            "Waiting %.2fs before retrying Gemini for %s (quota hint).",
+                            sleep_duration,
+                            image_path.name,
+                        )
+                        time.sleep(sleep_duration)
+                    else:
+                        time.sleep(min(2 * attempt, 6))
                     continue
                 raise
 
         raise RuntimeError("Gemini call failed") from last_error
+
+
+def _extract_retry_delay_seconds(exc: Exception) -> float | None:
+    delay_attr = getattr(exc, "retry_delay", None)
+    if delay_attr is not None:
+        total = getattr(delay_attr, "total_seconds", None)
+        if callable(total):
+            try:
+                return float(total())
+            except (TypeError, ValueError):
+                pass
+    message = str(exc)
+    match = re.search(r"retry_delay\s*\{\s*seconds:\s*([0-9]+(?:\.[0-9]+)?)(?:s)?", message)
+    if match:
+        try:
+            return float(match.group(1))
+        except ValueError:
+            return None
+    return None
 
 
 def gemini_to_observations(

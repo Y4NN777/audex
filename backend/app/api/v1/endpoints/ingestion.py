@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime, timezone
 import logging
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, status
@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.db.session import get_session
+from app.db.session import get_session, get_session_factory
 from app.models import AuditBatch, GeminiAnalysis
 from app.repositories import batches as batch_repo
 from app.schemas.ingestion import (
@@ -115,7 +115,12 @@ def _serialize_gemini_record(record: GeminiAnalysis) -> GeminiAnalysisRecord:
     )
 
 
-@router.post("/batches", summary="Upload a batch of audit files", response_model=BatchResponse)
+@router.post(
+    "/batches",
+    summary="Upload a batch of audit files",
+    response_model=BatchResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def create_batch(
     files: list[UploadFile],
     client_batch_id: str | None = Form(None),
@@ -137,88 +142,6 @@ async def create_batch(
     logger.info("Received upload for batch %s (client_id=%s)", batch_id, client_batch_id or "auto")
 
     storage_root.mkdir(parents=True, exist_ok=True)
-
-    timeline_events: list[dict[str, Any]] = []
-    db_event_records: list[dict[str, Any]] = []
-    stage_progress_map: dict[str, int] = {
-        "ingestion:received": 5,
-        "metadata:extracted": 15,
-        "analysis:start": 25,
-        "vision:start": 30,
-        "vision:complete": 45,
-        "ocr:start": 55,
-        "ocr:complete": 70,
-        "ocr:error": 70,
-        "analysis:complete": 75,
-        "scoring:complete": 85,
-        "report:generated": 95,
-        "report:available": 100,
-        "pipeline:error": 100,
-    }
-
-    def resolve_progress(stage_code: str, details: dict[str, Any] | None, explicit: int | None) -> int | None:
-        if explicit is not None:
-            return explicit
-        return stage_progress_map.get(stage_code)
-
-    def build_stage(
-        stage_code: str,
-        label: str,
-        *,
-        kind: str = "info",
-        details: dict[str, Any] | None = None,
-        progress: int | None = None,
-    ) -> dict[str, Any]:
-        timestamp = datetime.now(tz=timezone.utc)
-        stage: dict[str, Any] = {
-            "eventId": uuid4().hex,
-            "code": stage_code,
-            "label": label,
-            "kind": kind,
-            "timestamp": timestamp.isoformat(),
-        }
-        if details:
-            stage["details"] = details
-        resolved_progress = resolve_progress(stage_code, details, progress)
-        if resolved_progress is not None:
-            stage["progress"] = max(0, min(100, resolved_progress))
-        timeline_events.append(stage)
-        db_event_records.append(
-            {
-                "code": stage_code,
-                "label": label,
-                "kind": kind,
-                "timestamp": timestamp,
-                "progress": stage.get("progress"),
-                "details": details,
-            }
-        )
-        return stage
-
-    async def publish_stage(stage: dict[str, Any]) -> None:
-        await event_bus.publish({"batchId": batch_id, "stage": stage})
-
-    async def emit_stage(
-        stage_code: str,
-        label: str,
-        *,
-        kind: str = "info",
-        details: dict[str, Any] | None = None,
-        progress: int | None = None,
-    ) -> None:
-        stage = build_stage(stage_code, label, kind=kind, details=details, progress=progress)
-        await publish_stage(stage)
-
-    def schedule_stage(
-        stage_code: str,
-        label: str,
-        *,
-        kind: str = "info",
-        details: dict[str, Any] | None = None,
-        progress: int | None = None,
-    ) -> None:
-        stage = build_stage(stage_code, label, kind=kind, details=details, progress=progress)
-        asyncio.create_task(publish_stage(stage))
 
     for upload in files:
         if not allowed_content_type(upload.content_type or "", ALLOWED_CONTENT_TYPES):
@@ -258,173 +181,30 @@ async def create_batch(
     created_at = datetime.now(tz=timezone.utc)
     await batch_repo.create_batch(session, batch_id, "processing", stored_files, created_at)
     logger.info("Batch %s persisted to database with %d file(s)", batch_id, len(stored_files))
-    await emit_stage(
-        "ingestion:received",
-        "Fichiers reçus et stockés",
-        details={"fileCount": len(stored_files)},
-    )
-    await event_bus.publish({"batchId": batch_id, "status": "processing"})
 
     processor.enqueue(batch_id, stored_files)
 
-    pipeline = IngestionPipeline(storage_root)
-    reports_dir = storage_root / "reports"
-    report_builder = ReportBuilder(reports_dir)
+    await event_bus.publish({"batchId": batch_id, "status": "processing"})
+    asyncio.create_task(_run_pipeline_task(batch_id, stored_files, storage_root))
 
-    async def persist_events() -> None:
-        if db_event_records:
-            await batch_repo.add_events(session, batch_id, db_event_records.copy())
-            db_event_records.clear()
-
-    try:
-        logger.info("Launching pipeline for batch %s", batch_id)
-        await emit_stage(
-            "metadata:extracted",
-            "Métadonnées extraites pour tous les fichiers",
-            details={"hasMetadata": any(file.metadata for file in stored_files)},
-        )
-
-        pipeline_result = pipeline.run(
-            batch_id,
-            stored_files,
-            progress=lambda stage, data: schedule_stage(
-                stage,
-                data.get("label", stage),
-                details={k: v for k, v in data.items() if k not in {"label", "progress"}},
-                progress=int(data["progress"]) if "progress" in data else None,
-            ),
-        )
-        await batch_repo.replace_observations(
-            session,
-            batch_id,
-            pipeline_result.observations_local or [],
-            source="local",
-            replace_existing=True,
-        )
-        if pipeline_result.risk:
-            await batch_repo.save_risk_score(
-                session,
-                batch_id,
-                total_score=pipeline_result.risk.total_score,
-                normalized_score=pipeline_result.risk.normalized_score,
-                breakdown=pipeline_result.risk.breakdown,
-            )
-        else:
-            await batch_repo.delete_risk_score(session, batch_id)
-        await batch_repo.save_report_summary(
-            session,
-            batch_id,
-            summary_text=pipeline_result.summary_text,
-            findings=pipeline_result.summary_findings,
-            recommendations=pipeline_result.summary_recommendations,
-            status=pipeline_result.summary_status or "disabled",
-            source=pipeline_result.summary_source,
-            warnings=pipeline_result.summary_warnings or [],
-            prompt_hash=pipeline_result.summary_prompt_hash,
-            response_hash=pipeline_result.summary_response_hash,
-            duration_ms=pipeline_result.summary_duration_ms,
-        )
-        gemini_observation_payload = (
-            [_observation_payload(obs, "gemini") for obs in pipeline_result.observations_gemini]
-            if pipeline_result.observations_gemini
-            else None
-        )
-        if pipeline_result.observations_gemini:
-            await batch_repo.replace_observations(
-                session,
-                batch_id,
-                pipeline_result.observations_gemini,
-                source="gemini",
-                replace_existing=False,
-            )
-        await batch_repo.replace_ocr_texts(session, batch_id, pipeline_result.ocr_texts, pipeline_result.ocr_engine)
-        await batch_repo.add_gemini_analysis(
-            session,
-            batch_id,
-            provider=pipeline_result.gemini_provider or "google-gemini",
-            model=pipeline_result.gemini_model or settings.GEMINI_MODEL,
-            status=pipeline_result.gemini_status or ("disabled" if not settings.GEMINI_ENABLED else "unknown"),
-            prompt_hash=pipeline_result.gemini_prompt_hash,
-            prompt_version=pipeline_result.gemini_prompt_version,
-            duration_ms=pipeline_result.gemini_duration_ms,
-            summary=pipeline_result.gemini_summary,
-            warnings=pipeline_result.gemini_warnings or [],
-            observations_json=gemini_observation_payload,
-            raw_response=pipeline_result.gemini_payloads,
-            requested_by="pipeline:auto",
-        )
-        artifact = report_builder.build_from_pipeline(
-            pipeline_result,
-            timeline=timeline_events,
-            storage_root=storage_root,
-        )
-        await emit_stage(
-            "report:generated",
-            "Rapport PDF généré",
-            kind="success",
-            details={"hash": artifact.checksum_sha256, "path": str(artifact.path)},
-            progress=95,
-        )
-        await batch_repo.update_batch(
-            session,
-            batch_id,
-            status="completed",
-            report_path=str(artifact.path),
-            report_hash=artifact.checksum_sha256,
-            gemini_status=pipeline_result.gemini_status,
-            gemini_summary=pipeline_result.gemini_summary,
-            gemini_prompt_hash=pipeline_result.gemini_prompt_hash,
-            gemini_model=pipeline_result.gemini_model or settings.GEMINI_MODEL,
-        )
-        final_stage = build_stage(
-            "report:available",
-            "Rapport disponible au téléchargement",
-            kind="success",
-            details={"hash": artifact.checksum_sha256},
-            progress=100,
-        )
-        report_path_fragment = f"{settings.API_V1_PREFIX}/ingestion/reports/{batch_id}"
-        await event_bus.publish(
-            {
-                "batchId": batch_id,
-                "status": "completed",
-                "reportHash": artifact.checksum_sha256,
-                "reportUrl": report_path_fragment,
-                "stage": final_stage,
-            }
-        )
-        logger.info(
-            "Batch %s completed successfully (report=%s, status=%s)",
-            batch_id,
-            artifact.checksum_sha256,
-            pipeline_result.gemini_status or "n/a",
-        )
-        await persist_events()
-        batch = await batch_repo.get_batch(session, batch_id)
-        if not batch:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
-        return _serialize_batch(batch)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("Batch %s failed during processing: %s", batch_id, exc)
-        await batch_repo.update_batch(session, batch_id, status="failed", last_error=str(exc))
-        error_stage = build_stage(
-            "pipeline:error",
-            "Erreur durant le traitement",
-            kind="error",
-            details={"message": str(exc)},
-        )
-        await event_bus.publish(
-            {
-                "batchId": batch_id,
-                "status": "failed",
-                "error": str(exc),
-                "stage": error_stage,
-            }
-        )
-        await persist_events()
-        raise HTTPException(status_code=500, detail="Batch processing failed") from exc
-    finally:
-        await persist_events()
+    return BatchResponse(
+        batch_id=batch_id,
+        files=stored_files,
+        stored_at=created_at,
+        status="processing",
+        timeline=[],
+        report_hash=None,
+        report_url=None,
+        last_error=None,
+        ocr_texts=None,
+        observations=None,
+        gemini_status=None,
+        gemini_summary=None,
+        gemini_prompt_hash=None,
+        gemini_model=settings.GEMINI_MODEL,
+        risk_score=None,
+        summary=None,
+    )
 
 
 async def _event_stream(request: Request, queue: asyncio.Queue[str], interval: float = 15.0):
@@ -577,6 +357,264 @@ async def rerun_batch_analysis(
     )
 
     return _serialize_gemini_record(record)
+
+
+async def _run_pipeline_task(
+    batch_id: str,
+    stored_files: Sequence[FileMetadata],
+    storage_root: Path,
+) -> None:
+    session_factory = get_session_factory()
+    timeline_events: list[dict[str, Any]] = []
+    db_event_records: list[dict[str, Any]] = []
+    stage_progress_map: dict[str, int] = {
+        "ingestion:received": 5,
+        "metadata:extracted": 15,
+        "analysis:start": 25,
+        "vision:start": 30,
+        "vision:complete": 45,
+        "ocr:warmup:start": 45,
+        "ocr:warmup:complete": 50,
+        "ocr:warmup:error": 50,
+        "ocr:start": 55,
+        "ocr:complete": 70,
+        "ocr:error": 70,
+        "analysis:status": 65,
+        "analysis:complete": 75,
+        "scoring:complete": 85,
+        "report:generated": 95,
+        "report:available": 100,
+        "pipeline:error": 100,
+    }
+
+    def resolve_progress(stage_code: str, details: dict[str, Any] | None, explicit: int | None) -> int | None:
+        if explicit is not None:
+            return explicit
+        return stage_progress_map.get(stage_code)
+
+    def build_stage(
+        stage_code: str,
+        label: str,
+        *,
+        kind: str = "info",
+        details: dict[str, Any] | None = None,
+        progress: int | None = None,
+    ) -> dict[str, Any]:
+        timestamp = datetime.now(tz=timezone.utc)
+        stage: dict[str, Any] = {
+            "eventId": uuid4().hex,
+            "code": stage_code,
+            "label": label,
+            "kind": kind,
+            "timestamp": timestamp.isoformat(),
+        }
+        if details:
+            stage["details"] = details
+        resolved_progress = resolve_progress(stage_code, details, progress)
+        if resolved_progress is not None:
+            stage["progress"] = max(0, min(100, resolved_progress))
+        timeline_events.append(stage)
+        db_event_records.append(
+            {
+                "code": stage_code,
+                "label": label,
+                "kind": kind,
+                "timestamp": timestamp,
+                "progress": stage.get("progress"),
+                "details": details,
+            }
+        )
+        return stage
+
+    async def publish_stage(stage: dict[str, Any]) -> None:
+        await event_bus.publish({"batchId": batch_id, "stage": stage})
+
+    async def emit_stage(
+        stage_code: str,
+        label: str,
+        *,
+        kind: str = "info",
+        details: dict[str, Any] | None = None,
+        progress: int | None = None,
+    ) -> None:
+        stage = build_stage(stage_code, label, kind=kind, details=details, progress=progress)
+        await publish_stage(stage)
+
+    def schedule_stage(
+        stage_code: str,
+        label: str,
+        *,
+        kind: str = "info",
+        details: dict[str, Any] | None = None,
+        progress: int | None = None,
+    ) -> None:
+        stage = build_stage(stage_code, label, kind=kind, details=details, progress=progress)
+        asyncio.create_task(publish_stage(stage))
+
+    async def persist_events(session: AsyncSession) -> None:
+        if db_event_records:
+            await batch_repo.add_events(session, batch_id, db_event_records.copy())
+            db_event_records.clear()
+
+    reports_dir = storage_root / "reports"
+    pipeline = IngestionPipeline(storage_root)
+    report_builder = ReportBuilder(reports_dir)
+
+    async with session_factory() as session:
+        try:
+            logger.info("Launching pipeline for batch %s", batch_id)
+            await emit_stage(
+                "ingestion:received",
+                "Fichiers reçus et stockés",
+                details={"fileCount": len(stored_files)},
+            )
+            await persist_events(session)
+
+            await emit_stage(
+                "metadata:extracted",
+                "Métadonnées extraites pour tous les fichiers",
+                details={"hasMetadata": any(file.metadata for file in stored_files)},
+            )
+            await persist_events(session)
+
+            pipeline_result = pipeline.run(
+                batch_id,
+                stored_files,
+                progress=lambda stage, data: schedule_stage(
+                    stage,
+                    data.get("label", stage),
+                    details={k: v for k, v in data.items() if k not in {"label", "progress"}},
+                    progress=int(data["progress"]) if "progress" in data else None,
+                ),
+            )
+
+            await batch_repo.replace_observations(
+                session,
+                batch_id,
+                pipeline_result.observations_local or [],
+                source="local",
+                replace_existing=True,
+            )
+            if pipeline_result.risk:
+                await batch_repo.save_risk_score(
+                    session,
+                    batch_id,
+                    total_score=pipeline_result.risk.total_score,
+                    normalized_score=pipeline_result.risk.normalized_score,
+                    breakdown=pipeline_result.risk.breakdown,
+                )
+            else:
+                await batch_repo.delete_risk_score(session, batch_id)
+            await batch_repo.save_report_summary(
+                session,
+                batch_id,
+                summary_text=pipeline_result.summary_text,
+                findings=pipeline_result.summary_findings,
+                recommendations=pipeline_result.summary_recommendations,
+                status=pipeline_result.summary_status or "disabled",
+                source=pipeline_result.summary_source,
+                warnings=pipeline_result.summary_warnings or [],
+                prompt_hash=pipeline_result.summary_prompt_hash,
+                response_hash=pipeline_result.summary_response_hash,
+                duration_ms=pipeline_result.summary_duration_ms,
+            )
+            gemini_observation_payload = (
+                [_observation_payload(obs, "gemini") for obs in pipeline_result.observations_gemini]
+                if pipeline_result.observations_gemini
+                else None
+            )
+            if pipeline_result.observations_gemini:
+                await batch_repo.replace_observations(
+                    session,
+                    batch_id,
+                    pipeline_result.observations_gemini,
+                    source="gemini",
+                    replace_existing=False,
+                )
+            await batch_repo.replace_ocr_texts(session, batch_id, pipeline_result.ocr_texts, pipeline_result.ocr_engine)
+            await batch_repo.add_gemini_analysis(
+                session,
+                batch_id,
+                provider=pipeline_result.gemini_provider or "google-gemini",
+                model=pipeline_result.gemini_model or settings.GEMINI_MODEL,
+                status=pipeline_result.gemini_status or ("disabled" if not settings.GEMINI_ENABLED else "unknown"),
+                prompt_hash=pipeline_result.gemini_prompt_hash,
+                prompt_version=pipeline_result.gemini_prompt_version,
+                duration_ms=pipeline_result.gemini_duration_ms,
+                summary=pipeline_result.gemini_summary,
+                warnings=pipeline_result.gemini_warnings or [],
+                observations_json=gemini_observation_payload,
+                raw_response=pipeline_result.gemini_payloads,
+                requested_by="pipeline:auto",
+            )
+
+            artifact = report_builder.build_from_pipeline(
+                pipeline_result,
+                timeline=timeline_events,
+                storage_root=storage_root,
+            )
+            await emit_stage(
+                "report:generated",
+                "Rapport PDF généré",
+                kind="success",
+                details={"hash": artifact.checksum_sha256, "path": str(artifact.path)},
+                progress=95,
+            )
+
+            await batch_repo.update_batch(
+                session,
+                batch_id,
+                status="completed",
+                report_path=str(artifact.path),
+                report_hash=artifact.checksum_sha256,
+                gemini_status=pipeline_result.gemini_status,
+                gemini_summary=pipeline_result.gemini_summary,
+                gemini_prompt_hash=pipeline_result.gemini_prompt_hash,
+                gemini_model=pipeline_result.gemini_model or settings.GEMINI_MODEL,
+            )
+
+            final_stage = build_stage(
+                "report:available",
+                "Rapport disponible au téléchargement",
+                kind="success",
+                details={"hash": artifact.checksum_sha256},
+                progress=100,
+            )
+            report_path_fragment = f"{settings.API_V1_PREFIX}/ingestion/reports/{batch_id}"
+            await event_bus.publish(
+                {
+                    "batchId": batch_id,
+                    "status": "completed",
+                    "reportHash": artifact.checksum_sha256,
+                    "reportUrl": report_path_fragment,
+                    "stage": final_stage,
+                }
+            )
+            logger.info(
+                "Batch %s completed successfully (report=%s, status=%s)",
+                batch_id,
+                artifact.checksum_sha256,
+                pipeline_result.gemini_status or "n/a",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Batch %s failed during processing: %s", batch_id, exc)
+            await batch_repo.update_batch(session, batch_id, status="failed", last_error=str(exc))
+            error_stage = build_stage(
+                "pipeline:error",
+                "Erreur durant le traitement",
+                kind="error",
+                details={"message": str(exc)},
+            )
+            await event_bus.publish(
+                {
+                    "batchId": batch_id,
+                    "status": "failed",
+                    "error": str(exc),
+                    "stage": error_stage,
+                }
+            )
+        finally:
+            await persist_events(session)
 
 
 def _serialize_batch(batch: AuditBatch) -> BatchResponse:
