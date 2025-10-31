@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import logging
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Sequence
 
@@ -11,6 +12,8 @@ from app.services.vision_engine import get_vision_engine
 from app.services.advanced_analyzer import AdvancedAnalyzer
 from app.services.report_summary import ReportSummaryService, SummaryRequest
 from app.schemas.ingestion import FileMetadata
+
+logger = logging.getLogger(__name__)
 
 
 class IngestionPipeline:
@@ -43,6 +46,8 @@ class IngestionPipeline:
 
         total_files = len(file_list)
 
+        logger.info("Pipeline run started for batch %s (%d file(s))", batch_id, total_files)
+
         if progress:
             progress(
                 "analysis:start",
@@ -71,6 +76,13 @@ class IngestionPipeline:
 
             path = Path(file_meta.stored_path)
             is_image = file_meta.content_type.startswith("image/")
+
+            logger.debug(
+                "Processing file %s [%s] (image=%s)",
+                file_meta.filename,
+                file_meta.content_type,
+                is_image,
+            )
 
             if is_image:
                 metadata = file_meta.metadata or {}
@@ -159,6 +171,8 @@ class IngestionPipeline:
                 },
             )
 
+        logger.info("Vision/OCR completed for batch %s (observations=%d)", batch_id, len(observations))
+
         risk = self.scorer.score(batch_id, observations) if observations else None
 
         if progress:
@@ -196,6 +210,14 @@ class IngestionPipeline:
 
         gemini_result = self._advanced_analyzer.analyze(batch_id, image_files_with_zone)
         gemini_observations = gemini_result.observations
+
+        logger.info(
+            "Advanced analyzer completed for batch %s (status=%s, obs=%d, warnings=%d)",
+            batch_id,
+            gemini_result.status,
+            len(gemini_observations),
+            len(gemini_result.warnings),
+        )
 
         combined_observations = local_observations + gemini_observations
 

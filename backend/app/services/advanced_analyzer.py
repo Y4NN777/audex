@@ -55,6 +55,7 @@ class AdvancedAnalyzer:
         image_files: Sequence[tuple[Path, str | None, str | None]],
     ) -> GeminiAnalysisResult:
         if not self.enabled:
+            logger.info("Advanced analyzer disabled; skipping batch %s", batch_id)
             return GeminiAnalysisResult(
                 observations=[],
                 summary=None,
@@ -68,6 +69,7 @@ class AdvancedAnalyzer:
         if not self.api_key:
             warning = "gemini-missing-api-key"
             status = "failed" if self.required else "skipped"
+            logger.warning("Gemini API key missing for batch %s (status=%s)", batch_id, status)
             return GeminiAnalysisResult(
                 observations=[],
                 summary=None,
@@ -88,6 +90,13 @@ class AdvancedAnalyzer:
             prompt = self._build_prompt(zone_name=zone, site_type=site_type or "generic")
             prompt_hash = _hash_prompt(prompt)
             last_prompt_hash = prompt_hash
+            logger.debug(
+                "Submitting %s to Gemini (batch=%s, zone=%s, site_type=%s)",
+                image_path.name,
+                batch_id,
+                zone or "n/a",
+                site_type or "generic",
+            )
             try:
                 response = self._call_gemini(image_path, prompt, prompt_hash)
             except Exception as exc:  # pragma: no cover - dépend de l'API réelle
@@ -114,6 +123,12 @@ class AdvancedAnalyzer:
         duration_ms = int((time.perf_counter() - start_time) * 1000)
         summary = build_gemini_summary(observations, warnings)
         status = "ok" if observations or summary else "no_insights"
+        logger.info(
+            "Gemini processing finished for batch %s (status=%s, duration_ms=%s)",
+            batch_id,
+            status,
+            duration_ms,
+        )
         return GeminiAnalysisResult(
             observations=observations,
             summary=summary,
@@ -121,16 +136,16 @@ class AdvancedAnalyzer:
             warnings=warnings,
             prompt_hash=last_prompt_hash,
             duration_ms=duration_ms,
-             payloads=payloads,
-             model=self.model,
-             provider=self.PROVIDER,
-             prompt_version=self.PROMPT_VERSION,
+            payloads=payloads,
+            model=self.model,
+            provider=self.PROVIDER,
+            prompt_version=self.PROMPT_VERSION,
         )
 
 
     def _build_prompt(self, zone_name: str | None, site_type: str = "generic") -> str:
         st = (site_type or "generic").lower()
-        
+
         PROMPT_TEMPLATE = """\
         Tu es un expert en sûreté, sécurité physique et hygiène opérant au Burkina Faso.
         Analyse cette IMAGE d’audit et produis **UNIQUEMENT** un JSON valide conforme au **Schéma v1.4** ci-dessous.
@@ -249,11 +264,9 @@ class AdvancedAnalyzer:
             "embassy": "Site diplomatique. Priorités: périmètre, contrôle foule, blast standoff, évacuation.",
             "industrial": "Site industriel. Priorités: incendie, EPI, circulation engins, stock dangereux, périmètre large.",
             "ngo": "Site ONG. Priorités: sûreté du personnel, visiteurs, périmètre, routines d’urgence.",
-            "generic": "Site sensible nécessitant audit pragmatique (sûreté + hygiène minimale)."
+        "generic": "Site sensible nécessitant audit pragmatique (sûreté + hygiène minimale)."
         }
 
-
-        
         return PROMPT_TEMPLATE.format(
             zone_name=zone_name or "Non spécifiée",
             site_type=st,

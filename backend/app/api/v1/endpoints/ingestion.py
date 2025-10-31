@@ -134,6 +134,8 @@ async def create_batch(
     batch_dir = storage_root / batch_id
     stored_files: list[FileMetadata] = []
 
+    logger.info("Received upload for batch %s (client_id=%s)", batch_id, client_batch_id or "auto")
+
     storage_root.mkdir(parents=True, exist_ok=True)
 
     timeline_events: list[dict[str, Any]] = []
@@ -234,6 +236,14 @@ async def create_batch(
         if (upload.content_type or "").startswith("image/"):
             metadata = extract_image_metadata(destination)
 
+        logger.debug(
+            "Stored file for batch %s: %s (%s, %d bytes)",
+            batch_id,
+            safe_name,
+            upload.content_type or "unknown",
+            size,
+        )
+
         stored_files.append(
             FileMetadata(
                 filename=safe_name,
@@ -247,6 +257,7 @@ async def create_batch(
 
     created_at = datetime.now(tz=timezone.utc)
     await batch_repo.create_batch(session, batch_id, "processing", stored_files, created_at)
+    logger.info("Batch %s persisted to database with %d file(s)", batch_id, len(stored_files))
     await emit_stage(
         "ingestion:received",
         "Fichiers reçus et stockés",
@@ -266,6 +277,7 @@ async def create_batch(
             db_event_records.clear()
 
     try:
+        logger.info("Launching pipeline for batch %s", batch_id)
         await emit_stage(
             "metadata:extracted",
             "Métadonnées extraites pour tous les fichiers",
@@ -381,12 +393,19 @@ async def create_batch(
                 "stage": final_stage,
             }
         )
+        logger.info(
+            "Batch %s completed successfully (report=%s, status=%s)",
+            batch_id,
+            artifact.checksum_sha256,
+            pipeline_result.gemini_status or "n/a",
+        )
         await persist_events()
         batch = await batch_repo.get_batch(session, batch_id)
         if not batch:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
         return _serialize_batch(batch)
     except Exception as exc:  # noqa: BLE001
+        logger.exception("Batch %s failed during processing: %s", batch_id, exc)
         await batch_repo.update_batch(session, batch_id, status="failed", last_error=str(exc))
         error_stage = build_stage(
             "pipeline:error",

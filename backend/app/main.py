@@ -5,7 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.routes import api_router
 from app.core.config import settings
+from app.core.logging_config import configure_logging
 from app.db.session import init_db
+
+
+configure_logging()
 
 
 @asynccontextmanager

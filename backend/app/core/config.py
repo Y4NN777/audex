@@ -13,6 +13,19 @@ class Settings(BaseSettings):
         default="sqlite+aiosqlite:///./audex.db",
         description="SQLAlchemy database URL",
     )
+    LOG_LEVEL: str = Field(default="INFO", description="Root logging level")
+    LOG_FORMAT: str | None = Field(
+        default=None,
+        description="Custom logging formatter pattern (optional).",
+    )
+    LOG_DATE_FORMAT: str | None = Field(
+        default=None,
+        description="Custom logging date format (optional).",
+    )
+    LOG_FILE: str | None = Field(
+        default="audex.log",
+        description="Optional path to a file where logs should be written.",
+    )
     OCR_ENGINE: str = Field(default="easyocr", description="OCR engine identifier")
     OCR_LANGUAGES: list[str] = Field(default_factory=lambda: ["fr", "en"])
     VISION_MODEL_PATH: str = Field(default="ultralytics/yolov8n.pt")
