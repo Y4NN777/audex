@@ -25,7 +25,7 @@ function App() {
   const { submitFiles, retryBatch, removeBatch, uploading } = useBatchUploader({ online });
   const batches = useBatchesStore((state) => state.batches);
   const [syncing, setSyncing] = useState(false);
-  const { connected: eventsConnected, available: eventsAvailable } = useBatchEvents(online);
+  const { connected: eventsConnected, available: eventsAvailable, error: eventsError } = useBatchEvents(online);
   useBatchHydrator(online);
 
   useEffect(() => {
@@ -214,7 +214,13 @@ function App() {
         </div>
 
         <aside className="workspace-side">
-          <TimelinePanel batch={highlightedBatch} />
+          <TimelinePanel
+            batch={highlightedBatch}
+            eventsConnected={eventsConnected}
+            eventsAvailable={eventsAvailable}
+            connectionError={eventsError}
+            onRefresh={handleRefreshHighlight}
+          />
         </aside>
       </div>
 

@@ -679,6 +679,55 @@ header p {
   gap: 1rem;
 }
 
+.timeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.timeline-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  background: rgba(148, 163, 184, 0.18);
+  color: #475569;
+}
+
+.timeline-status.online {
+  background: rgba(16, 185, 129, 0.18);
+  color: #047857;
+}
+
+.timeline-status.offline {
+  background: rgba(59, 130, 246, 0.15);
+  color: #2563eb;
+}
+
+.timeline-status.unavailable {
+  background: rgba(248, 113, 113, 0.15);
+  color: #b91c1c;
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.05);
+}
+
+.timeline-warning {
+  margin: 0 0 0.75rem;
+  color: #b45309;
+  font-size: 0.9rem;
+}
+
 .timeline li {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -711,6 +760,20 @@ header p {
   gap: 0.2rem;
 }
 
+.timeline-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(99, 102, 241, 0.12);
+  color: #3730a3;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 .timeline-label {
   margin: 0;
   font-weight: 600;
@@ -731,6 +794,36 @@ header p {
   border-radius: 0.6rem;
   padding: 0.6rem;
   border: 1px solid #e2e8f0;
+}
+
+.timeline-description {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #475569;
+}
+
+.timeline-details-grid {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+}
+
+.timeline-detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+  color: #475569;
+}
+
+.timeline-detail-key {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.timeline-detail-value {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  color: #334155;
 }
 
 .report-card {

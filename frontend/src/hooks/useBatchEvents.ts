@@ -31,6 +31,7 @@ export function useBatchEvents(enabled: boolean) {
   const setProgress = useBatchesStore((state) => state.setProgress);
   const [connected, setConnected] = useState(false);
   const [available, setAvailable] = useState(true);
+  const [lastError, setLastError] = useState<string | null>(null);
   const sourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
@@ -41,6 +42,7 @@ export function useBatchEvents(enabled: boolean) {
       }
       setConnected(false);
       setAvailable(true);
+      setLastError(null);
       return;
     }
 
@@ -52,9 +54,11 @@ export function useBatchEvents(enabled: boolean) {
       opened = true;
       setAvailable(true);
       setConnected(true);
+      setLastError(null);
     };
     eventSource.onerror = () => {
       setConnected(false);
+      setLastError("Flux temps réel indisponible. Nouvelle tentative automatique…");
       if (!opened) {
         setAvailable(false);
         eventSource.close();
@@ -102,8 +106,10 @@ export function useBatchEvents(enabled: boolean) {
             setProgress(payload.batchId, entry.progress);
           }
         }
+        setLastError(null);
       } catch (error) {
         console.error("Failed to parse batch event", error);
+        setLastError("Impossible de traiter un événement SSE.");
       }
     };
 
@@ -111,8 +117,9 @@ export function useBatchEvents(enabled: boolean) {
       eventSource.close();
       sourceRef.current = null;
       setConnected(false);
+      setLastError(null);
     };
   }, [enabled, mergeBatch, addTimelineEntry, setProgress]);
 
-  return { connected, available };
+  return { connected, available, error: lastError };
 }
