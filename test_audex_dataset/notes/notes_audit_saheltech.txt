@@ -1,0 +1,38 @@
+AUDIT SAHELTECH INDUSTRIES - 30/10/2025
+Auditeur : Test AUDEX
+
+=== ZONE A - ACCUEIL ET RECEPTION ===
+- Extincteur salle d'attente : ABSENT (dernière vérification 2023)
+- Caméra entrée principale : DEFECTUEUSE (écran noir)
+- Badge visiteur laissé sans surveillance sur comptoir
+- Détecteur de fumée plafond : NON FONCTIONNEL
+
+=== ZONE B - BUREAUX ADMINISTRATIFS ===
+- Porte coupe-feu Bloc B : BLOQUEE OUVERTE avec cale
+- 3 postes informatiques laissés déverrouillés (pause déjeuner)
+- Câbles électriques au sol : RISQUE DE TREBUCHEMENT
+- Post-it avec mot de passe visible sur écran poste 12
+
+=== ZONE C - DATACENTER ===
+- Porte accès serveurs : OUVERTE, badge non requis observé 14h30
+- Climatisation salle serveurs : température 28°C (norme : 18-22°C)
+- Absence système détection incendie spécifique
+- Documentation réseau accessible sans restriction
+
+=== ZONE D - ENTREPOT ===
+- Issue de secours Est : OBSTRUEE par cartons
+- Éclairage secours : 4 ampoules sur 8 défectueuses
+- Produits nettoyage stockés sans étiquetage SANS
+- Fissure clôture périmètre côté Nord (≈2m)
+
+=== ZONE E - SANITAIRES ET COMMUNS ===
+- WC étage 2 : insalubrité constatée (non nettoyés depuis 48h)
+- Poubelles salle pause : débordement constaté
+- Infiltration eau visible plafond couloir B (moisissures)
+- Absence savon distributeurs (3 sur 5 vides)
+
+=== OBSERVATIONS GENERALES ===
+- Personnel non sensibilisé procédures évacuation
+- Plan évacuation affiché : PERIME (datant de 2022)
+- Registre sécurité incendie : dernière MAJ mars 2025
+- Badges d'accès : 12 badges non restitués (employés partis)
