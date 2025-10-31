@@ -29,7 +29,11 @@ from app.schemas.ingestion import (
 from app.services.batch_processor import BatchProcessorProtocol, get_batch_processor
 from app.services.events import event_bus
 from app.services.metadata import extract_image_metadata
-from app.services.pipeline import IngestionPipeline
+from app.services.pipeline import (
+    IngestionPipeline,
+    SIMULATED_METADATA_DELAY_SECONDS,
+    SIMULATED_REPORT_DELAY_SECONDS,
+)
 from app.services.report import ReportBuilder
 from app.services.storage import allowed_content_type, sanitize_filename, save_upload_file
 from app.services.advanced_analyzer import AdvancedAnalyzer
@@ -514,7 +518,7 @@ async def _run_pipeline_task(
             db_event_records.clear()
 
     reports_dir = storage_root / "reports"
-    pipeline = IngestionPipeline(storage_root)
+    pipeline = IngestionPipeline(storage_root, simulate_latency=True)
     report_builder = ReportBuilder(reports_dir)
 
     async with session_factory() as session:
@@ -533,6 +537,9 @@ async def _run_pipeline_task(
                 details={"hasMetadata": any(file.metadata for file in stored_files)},
             )
             await persist_events(session)
+
+            if pipeline.simulate_latency_enabled and SIMULATED_METADATA_DELAY_SECONDS > 0:
+                await asyncio.sleep(SIMULATED_METADATA_DELAY_SECONDS)
 
             pipeline_result = pipeline.run(
                 batch_id,
@@ -604,6 +611,9 @@ async def _run_pipeline_task(
                 raw_response=pipeline_result.gemini_payloads,
                 requested_by="pipeline:auto",
             )
+
+            if pipeline.simulate_latency_enabled and SIMULATED_REPORT_DELAY_SECONDS > 0:
+                await asyncio.sleep(SIMULATED_REPORT_DELAY_SECONDS)
 
             artifact = report_builder.build_from_pipeline(
                 pipeline_result,

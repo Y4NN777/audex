@@ -16,6 +16,15 @@ from app.schemas.ingestion import FileMetadata
 logger = logging.getLogger(__name__)
 
 
+# Simulated delays (demo mode) to make pipeline progression perceptible during tests.
+# These values intentionally stretch processing so stakeholders can observe each stage.
+SIMULATED_METADATA_DELAY_SECONDS = 15.0
+SIMULATED_ANALYSIS_DELAY_SECONDS = 30.0
+SIMULATED_SCORING_DELAY_SECONDS = 20.0
+SIMULATED_SUMMARY_DELAY_SECONDS = 30.0
+SIMULATED_REPORT_DELAY_SECONDS = 15.0
+
+
 class IngestionPipeline:
     """Orchestrates OCR + vision inference to produce structured outputs."""
 
@@ -25,6 +34,8 @@ class IngestionPipeline:
         scorer: RiskScorer | None = None,
         advanced_analyzer: AdvancedAnalyzer | None = None,
         summary_service: ReportSummaryService | None = None,
+        *,
+        simulate_latency: bool = False,
     ) -> None:
         self.storage_root = storage_root
         self.scorer = scorer or RiskScorer()
@@ -33,6 +44,15 @@ class IngestionPipeline:
         self._ocr_engine_name = getattr(self._ocr_engine, "engine_id", "unknown")
         self._advanced_analyzer = advanced_analyzer or AdvancedAnalyzer()
         self._summary_service = summary_service or ReportSummaryService()
+        self._simulate_latency = simulate_latency
+
+    @property
+    def simulate_latency_enabled(self) -> bool:
+        return self._simulate_latency
+
+    def _sleep(self, seconds: float) -> None:
+        if self._simulate_latency and seconds > 0:
+            time.sleep(seconds)
 
     def run(
         self,
@@ -198,6 +218,7 @@ class IngestionPipeline:
                     "progress": 70,
                 },
             )
+            self._sleep(SIMULATED_ANALYSIS_DELAY_SECONDS)
 
         logger.info("Vision/OCR completed for batch %s (observations=%d)", batch_id, len(observations))
 
@@ -213,6 +234,7 @@ class IngestionPipeline:
                     "progress": 85,
                 },
             )
+            self._sleep(SIMULATED_SCORING_DELAY_SECONDS)
 
         local_observations = list(observations)
 
@@ -268,6 +290,7 @@ class IngestionPipeline:
                     "progress": 90,
                 },
             )
+            self._sleep(SIMULATED_SUMMARY_DELAY_SECONDS)
 
         result = PipelineResult(
             batch_id=batch_id,
