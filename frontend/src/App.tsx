@@ -63,10 +63,11 @@ function App() {
   }, [online, setBatches]);
 
   const handleUpload = useCallback(async (files: File[]) => {
-    await submitFiles(files);
-    const items = online ? await synchronizePendingBatches() : await loadBatches();
+    const batchId = await submitFiles(files);
+    const items = await loadBatches();
     setBatches(items);
-  }, [online, setBatches, submitFiles]);
+    return batchId;
+  }, [setBatches, submitFiles]);
 
   const pendingBatches = useMemo(
     () => batches.filter((batch) => batch.status === "pending" || batch.status === "failed" || batch.status === "uploading"),

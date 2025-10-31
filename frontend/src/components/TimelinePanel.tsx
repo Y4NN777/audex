@@ -13,9 +13,13 @@ const STAGE_DICTIONARY: Record<string, { label: string; description?: string }> 
   "metadata:extracted": { label: "Métadonnées", description: "Extraction des métadonnées" },
   "vision:start": { label: "Vision", description: "Analyse visuelle en cours" },
   "vision:complete": { label: "Vision", description: "Analyse visuelle terminée" },
+  "ocr:warmup:start": { label: "OCR", description: "Initialisation du moteur EasyOCR" },
+  "ocr:warmup:complete": { label: "OCR", description: "EasyOCR prêt" },
+  "ocr:warmup:error": { label: "OCR", description: "Erreur de chargement EasyOCR" },
   "ocr:start": { label: "OCR", description: "Lecture OCR en cours" },
   "ocr:complete": { label: "OCR", description: "Textes OCR prêts" },
   "analysis:start": { label: "Analyse IA", description: "Synthèse IA démarrée" },
+  "analysis:status": { label: "Analyse IA", description: "Pipeline en cours" },
   "analysis:complete": { label: "Analyse IA", description: "Synthèse IA terminée" },
   "scoring:complete": { label: "Scoring", description: "Score de risque calculé" },
   "report:generated": { label: "Rapport", description: "PDF généré" },
@@ -141,6 +145,14 @@ function translateDetailKey(key: string): string {
       return "Chemin";
     case "message":
       return "Message";
+    case "languages":
+      return "Langues";
+    case "file":
+      return "Fichier";
+    case "position":
+      return "Position";
+    case "total":
+      return "Total";
     default:
       return key;
   }

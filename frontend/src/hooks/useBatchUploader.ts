@@ -1,3 +1,4 @@
+import axios from "axios";
 import { useCallback, useState } from "react";
 
 import {
@@ -17,7 +18,7 @@ import { resolveReportUrl } from "../services/reports";
 import { toFriendlyError } from "../utils/errors";
 
 type UploadResult = {
-  submitFiles: (files: File[]) => Promise<void>;
+  submitFiles: (files: File[]) => Promise<string>;
   retryBatch: (batchId: string) => Promise<void>;
   removeBatch: (batchId: string) => Promise<void>;
   uploading: boolean;
@@ -82,9 +83,9 @@ export function useBatchUploader({ online }: { online: boolean }): UploadResult 
   );
 
   const submitFiles = useCallback(
-    async (files: File[]) => {
+    async (files: File[]): Promise<string> => {
       if (!files.length) {
-        return;
+        throw new Error("Aucun fichier à envoyer");
       }
 
       const initialStatus: BatchStatus = online ? "uploading" : "pending";
@@ -99,41 +100,57 @@ export function useBatchUploader({ online }: { online: boolean }): UploadResult 
       }
 
       if (!online) {
-        return;
+        return batch.id;
       }
 
       setUploading(true);
-      try {
-        updateStatus(batch.id, "processing");
-        setProgress(batch.id, 10);
-        await mergePersisted(batch.id, { status: "processing", progress: 10 });
+      const launchUpload = async () => {
+        try {
+          updateStatus(batch.id, "processing");
+          setProgress(batch.id, 10);
+          await mergePersisted(batch.id, { status: "processing", progress: 10 });
 
-        const response = await uploadToServer(batch);
-        const normalizedStatus = response.status as BatchStatus;
-        const report = response.report_hash
-          ? {
-              hash: response.report_hash,
-              downloadUrl: response.report_url
-                ? absolutizeReportUrl(response.report_url)
-                : resolveReportUrl(batch.id)
-            }
-          : undefined;
-        const latestProgress = await persistTimelineEvents(batch.id, response.timeline);
-        if (typeof latestProgress === "number") {
-          setProgress(batch.id, latestProgress);
-          await mergePersisted(batch.id, { progress: latestProgress });
+          const response = await uploadToServer(batch);
+          const normalizedStatus = response.status as BatchStatus;
+          const report = response.report_hash
+            ? {
+                hash: response.report_hash,
+                downloadUrl: response.report_url
+                  ? absolutizeReportUrl(response.report_url)
+                  : resolveReportUrl(batch.id)
+              }
+            : undefined;
+          const latestProgress = await persistTimelineEvents(batch.id, response.timeline);
+          if (typeof latestProgress === "number") {
+            setProgress(batch.id, latestProgress);
+            await mergePersisted(batch.id, { progress: latestProgress });
+          }
+          updateStatus(batch.id, normalizedStatus, { lastError: undefined, report });
+          await mergePersisted(batch.id, { status: normalizedStatus, lastError: undefined, report });
+        } catch (error) {
+          if (axios.isAxiosError(error) && error.code === "ECONNABORTED") {
+            const message =
+              "Temps de réponse dépassé côté navigateur. Le serveur poursuit le traitement : surveillez la timeline.";
+            console.warn("Upload timeout, keeping batch in processing state", error);
+            updateStatus(batch.id, "processing", { lastError: message });
+            await mergePersisted(batch.id, { status: "processing", lastError: message });
+          } else {
+            const apiError = parseApiError(error);
+            const friendly = toFriendlyError(apiError.message, apiError.status);
+            console.error("Upload error", apiError);
+            updateStatus(batch.id, "failed", { lastError: friendly });
+            await mergePersisted(batch.id, { status: "failed", lastError: friendly });
+          }
+        } finally {
+          setUploading(false);
         }
-        updateStatus(batch.id, normalizedStatus, { lastError: undefined, report });
-        await mergePersisted(batch.id, { status: normalizedStatus, lastError: undefined, report });
-      } catch (error) {
-        const apiError = parseApiError(error);
-        const friendly = toFriendlyError(apiError.message, apiError.status);
-        console.error("Upload error", apiError);
-        updateStatus(batch.id, "failed", { lastError: friendly });
-        await mergePersisted(batch.id, { status: "failed", lastError: friendly });
-      } finally {
-        setUploading(false);
-      }
+      };
+
+      launchUpload().catch((error) => {
+        console.error("Unexpected upload failure", error);
+      });
+
+      return batch.id;
     },
     [online, upsertBatch, updateStatus, mergePersisted, setProgress]
   );
@@ -167,10 +184,17 @@ export function useBatchUploader({ online }: { online: boolean }): UploadResult 
         updateStatus(batch.id, normalizedStatus, { lastError: undefined, report });
         await mergePersisted(batch.id, { status: normalizedStatus, lastError: undefined, report });
       } catch (error) {
-        const apiError = parseApiError(error);
-        const friendly = toFriendlyError(apiError.message, apiError.status);
-        updateStatus(batch.id, "failed", { lastError: friendly });
-        await mergePersisted(batch.id, { status: "failed", lastError: friendly });
+        if (axios.isAxiosError(error) && error.code === "ECONNABORTED") {
+          const message =
+            "La requête a expiré mais le lot est toujours en cours sur le serveur. Patientez ou vérifiez la timeline.";
+          updateStatus(batch.id, "processing", { lastError: message });
+          await mergePersisted(batch.id, { status: "processing", lastError: message });
+        } else {
+          const apiError = parseApiError(error);
+          const friendly = toFriendlyError(apiError.message, apiError.status);
+          updateStatus(batch.id, "failed", { lastError: friendly });
+          await mergePersisted(batch.id, { status: "failed", lastError: friendly });
+        }
       }
     },
     [updateStatus, mergePersisted, setProgress]
@@ -214,11 +238,19 @@ export async function synchronizePendingBatches(): Promise<BatchSummary[]> {
       useBatchesStore.getState().updateStatus(batch.id, normalizedStatus, { lastError: undefined, report });
       await mergeBatchRecord(batch.id, { status: normalizedStatus, lastError: undefined, report });
     } catch (error) {
-      const apiError = parseApiError(error);
-      console.error("Failed to synchronize batch", batch.id, apiError);
-      const friendly = toFriendlyError(apiError.message, apiError.status);
-      useBatchesStore.getState().updateStatus(batch.id, "failed", { lastError: friendly });
-      await mergeBatchRecord(batch.id, { status: "failed", lastError: friendly });
+      if (axios.isAxiosError(error) && error.code === "ECONNABORTED") {
+        const message =
+          "Synchronisation interrompue (timeout). Le lot reste en cours sur le serveur, nouvelle tentative plus tard.";
+        console.warn("Synchronization timeout for batch", batch.id);
+        useBatchesStore.getState().updateStatus(batch.id, "processing", { lastError: message });
+        await mergeBatchRecord(batch.id, { status: "processing", lastError: message });
+      } else {
+        const apiError = parseApiError(error);
+        console.error("Failed to synchronize batch", batch.id, apiError);
+        const friendly = toFriendlyError(apiError.message, apiError.status);
+        useBatchesStore.getState().updateStatus(batch.id, "failed", { lastError: friendly });
+        await mergeBatchRecord(batch.id, { status: "failed", lastError: friendly });
+      }
     }
   }
 

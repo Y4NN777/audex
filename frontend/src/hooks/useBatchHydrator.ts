@@ -4,6 +4,8 @@ import { syncBatchFromServer } from "../services/batches";
 import { useBatchesStore } from "../state/useBatchesStore";
 
 const HYDRATION_INTERVAL_MS = 60_000;
+const HYDRATION_INTERVAL_FAST_MS = 15_000;
+const FRESH_BATCH_WINDOW_MS = 5 * 60_000;
 
 export function useBatchHydrator(online: boolean) {
   const batches = useBatchesStore((state) => state.batches);
@@ -48,12 +50,39 @@ export function useBatchHydrator(online: boolean) {
       }
     };
 
-    hydrate();
-    const interval = window.setInterval(hydrate, HYDRATION_INTERVAL_MS);
+    const pickInterval = () => {
+      const now = Date.now();
+      const hasRecentProcessing = batches.some((batch) => {
+        if (batch.status !== "processing" && batch.status !== "uploading") {
+          return false;
+        }
+        const createdAt = Date.parse(batch.createdAt);
+        if (Number.isNaN(createdAt)) {
+          return true;
+        }
+        return now - createdAt < FRESH_BATCH_WINDOW_MS;
+      });
+      return hasRecentProcessing ? HYDRATION_INTERVAL_FAST_MS : HYDRATION_INTERVAL_MS;
+    };
+
+    let timeoutId: number | null = null;
+
+    const loop = async () => {
+      await hydrate();
+      if (controller.signal.aborted) {
+        return;
+      }
+      const delay = pickInterval();
+      timeoutId = window.setTimeout(loop, delay);
+    };
+
+    void loop();
 
     return () => {
       controller.abort();
-      window.clearInterval(interval);
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
       inflight.current.clear();
     };
   }, [online, batches]);

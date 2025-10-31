@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CloudUpload, File as FileIcon, FileText, Image as ImageIcon } from "lucide-react";
 
 import { toFriendlyError } from "../utils/errors";
+import { useBatchesStore } from "../state/useBatchesStore";
 
 type Props = {
-  onUpload: (files: File[]) => Promise<void>;
+  onUpload: (files: File[]) => Promise<string>;
   isUploading: boolean;
   online: boolean;
 };
@@ -17,6 +18,7 @@ type PreviewItem = {
   url?: string;
   status: PreviewStatus;
   progress: number;
+  batchId?: string;
 };
 
 export function UploadPanel({ onUpload, isUploading, online }: Props) {
@@ -25,6 +27,7 @@ export function UploadPanel({ onUpload, isUploading, online }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [previews, setPreviews] = useState<PreviewItem[]>([]);
   const timersRef = useRef<Record<string, number>>({});
+  const batches = useBatchesStore((state) => state.batches);
 
   const acceptedFormats = useMemo(() => ["Images (PNG, JPG)", "DOCX", "PDF", "TXT"].join(" • "), []);
 
@@ -44,24 +47,42 @@ export function UploadPanel({ onUpload, isUploading, online }: Props) {
 
     setError(null);
 
-    const nextPreviews: PreviewItem[] = files.map((file) => ({
-      id: `${Date.now()}-${file.name}`,
-      file,
-      url: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
-      status: "uploading",
-      progress: 0
-    }));
+    const timestamp = Date.now();
+    const previewIds: string[] = [];
+    const nextPreviews: PreviewItem[] = files.map((file, index) => {
+      const id = `${timestamp}-${index}-${file.name}`;
+      previewIds.push(id);
+      return {
+        id,
+        file,
+        url: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+        status: "uploading",
+        progress: 0
+      };
+    });
 
     appendPreviews(nextPreviews);
-    startProgress(nextPreviews.map((preview) => preview.id));
+    startProgress(previewIds);
 
     try {
-      await onUpload(files);
-      nextPreviews.forEach((preview) => finalizePreview(preview.id, "success"));
+      const batchId = await onUpload(files);
+      setPreviews((prev) =>
+        prev.map((preview) =>
+          previewIds.includes(preview.id)
+            ? {
+                ...preview,
+                batchId
+              }
+            : preview
+        )
+      );
+      if (!online) {
+        previewIds.forEach((previewId) => finalizePreview(previewId, "success"));
+      }
     } catch (err) {
       const friendly = toFriendlyError((err as Error)?.message);
       setError(friendly);
-      nextPreviews.forEach((preview) => finalizePreview(preview.id, "error"));
+      previewIds.forEach((previewId) => finalizePreview(previewId, "error"));
     }
   };
 
@@ -69,7 +90,7 @@ export function UploadPanel({ onUpload, isUploading, online }: Props) {
     setPreviews((prev) => [...items, ...prev]);
   };
 
-  const startProgress = (ids: string[]) => {
+  const startProgress = useCallback((ids: string[]) => {
     ids.forEach((id) => {
       timersRef.current[id] = window.setInterval(() => {
         setPreviews((prev) =>
@@ -81,9 +102,9 @@ export function UploadPanel({ onUpload, isUploading, online }: Props) {
         );
       }, 200);
     });
-  };
+  }, []);
 
-  const finalizePreview = (id: string, status: PreviewStatus) => {
+  const finalizePreview = useCallback((id: string, status: PreviewStatus) => {
     const timer = timersRef.current[id];
     if (timer) {
       clearInterval(timer);
@@ -100,7 +121,27 @@ export function UploadPanel({ onUpload, isUploading, online }: Props) {
           : preview
       )
     );
-  };
+  }, []);
+
+  useEffect(() => {
+    previews.forEach((preview) => {
+      if (preview.status !== "uploading" || !preview.batchId) {
+        return;
+      }
+      const batch = batches.find((item) => item.id === preview.batchId);
+      if (!batch) {
+        return;
+      }
+      if (batch.status === "failed") {
+        finalizePreview(preview.id, "error");
+        return;
+      }
+      const hasIngestionEvent = (batch.timeline ?? []).some((event) => event.stage === "ingestion:received");
+      if (hasIngestionEvent || batch.status === "completed") {
+        finalizePreview(preview.id, "success");
+      }
+    });
+  }, [batches, previews, finalizePreview]);
 
   const clearAllTimers = () => {
     Object.values(timersRef.current).forEach((timer) => clearInterval(timer));

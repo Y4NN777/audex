@@ -52,3 +52,6 @@ L’application tourne sur `http://localhost:5173`.
 - Brancher un suivi temps réel (SSE/WebSocket) pour refléter l’analyse IA.
 - Afficher l’aperçu des rapports PDF générés et leur hachage blockchain.
 - Ajouter l’authentification/rôles côté client puis un design system homogène.
+
+## Remarques d'exécution
+- Lors de la première analyse, le backend initialise EasyOCR et télécharge ses poids. Cette étape peut prendre plusieurs minutes et la requête HTTP peut expirer côté navigateur ; surveillez la timeline temps réel qui reflète l’état du pipeline (étapes « Chargement du moteur OCR », « Analyse en cours », etc.).

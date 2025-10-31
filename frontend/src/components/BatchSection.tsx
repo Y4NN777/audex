@@ -42,9 +42,10 @@ export function BatchSection({ title, batches, emptyMessage, onRetry, onRemove }
             const size = formatSize(batch.files.reduce((total, file) => total + file.size, 0));
             const isRetryable = onRetry && (batch.status === "failed" || batch.status === "pending");
             const canRemove = onRemove && (batch.status === "failed" || batch.status === "pending");
-            const progress = clampProgress(
-              batch.status === "completed" ? 100 : batch.progress ?? 0
-            );
+            const timelineProgress = computeProgressFromTimeline(batch.timeline ?? []);
+            const rawProgress =
+              batch.status === "completed" ? 100 : Math.max(batch.progress ?? 0, timelineProgress);
+            const progress = clampProgress(rawProgress);
             const showProgress = progress > 0;
             const steps = buildStepStates(batch, progress);
 
@@ -224,6 +225,18 @@ function clampProgress(value: number): number {
     return 0;
   }
   return Math.min(100, Math.max(0, rounded));
+}
+
+function computeProgressFromTimeline(timeline: BatchTimelineEntry[]): number {
+  if (!timeline.length) {
+    return 0;
+  }
+  return timeline.reduce((max, entry) => {
+    if (typeof entry.progress === "number" && Number.isFinite(entry.progress)) {
+      return Math.max(max, entry.progress);
+    }
+    return max;
+  }, 0);
 }
 
 type StepState = "done" | "current" | "pending";
