@@ -30,7 +30,6 @@ export function ObservationsPanel({ batch }: Props) {
       ) : (
         <div className="observation-grid">
           <ObservationGroup title="Vision locale" observations={local} />
-          <ObservationGroup title="Synthèse Gemini" observations={gemini} />
         </div>
       )}
     </section>

@@ -9,26 +9,30 @@ type Props = {
 };
 
 const STAGE_DICTIONARY: Record<string, { label: string; description?: string }> = {
-  "ingestion:received": { label: "Ingestion", description: "Fichiers reçus et stockés" },
-  "metadata:extracted": { label: "Métadonnées", description: "Extraction des métadonnées" },
-  "vision:start": { label: "Vision", description: "Analyse visuelle en cours" },
-  "vision:complete": { label: "Vision", description: "Analyse visuelle terminée" },
-  "ocr:warmup:start": { label: "OCR", description: "Initialisation du moteur EasyOCR" },
-  "ocr:warmup:complete": { label: "OCR", description: "EasyOCR prêt" },
-  "ocr:warmup:error": { label: "OCR", description: "Erreur de chargement EasyOCR" },
-  "ocr:start": { label: "OCR", description: "Lecture OCR en cours" },
-  "ocr:complete": { label: "OCR", description: "Textes OCR prêts" },
-  "analysis:start": { label: "Analyse IA", description: "Synthèse IA démarrée" },
-  "analysis:status": { label: "Analyse IA", description: "Pipeline en cours" },
-  "analysis:complete": { label: "Analyse IA", description: "Synthèse IA terminée" },
-  "scoring:complete": { label: "Scoring", description: "Score de risque calculé" },
-  "report:generated": { label: "Rapport", description: "PDF généré" },
-  "report:available": { label: "Rapport", description: "PDF disponible au téléchargement" },
-  "pipeline:error": { label: "Erreur", description: "Incident durant le traitement" }
+  "ingestion:received": { label: "Déposé", description: "Fichiers reçus sur la plateforme." },
+  "metadata:extracted": { label: "Préparation", description: "Information de base extraite des documents." },
+  "analysis:start": { label: "Analyse IA", description: "Début de l’examen automatique des documents." },
+  "analysis:complete": { label: "Analyse IA", description: "Analyse automatique finalisée." },
+  "scoring:complete": { label: "Évaluation", description: "Score de risque calculé pour ce lot." },
+  "report:generated": { label: "Rapport", description: "Rapport en cours de finalisation." },
+  "report:available": { label: "Rapport prêt", description: "Rapport disponible au téléchargement." },
+  "pipeline:error": { label: "Incident", description: "Un incident nécessite une vérification." }
 };
 
+const HIDDEN_STAGES = new Set<string>([
+  "vision:start",
+  "vision:complete",
+  "ocr:warmup:start",
+  "ocr:warmup:complete",
+  "ocr:warmup:error",
+  "ocr:start",
+  "ocr:complete",
+  "analysis:status"
+]);
+
 export function TimelinePanel({ batch, eventsConnected, eventsAvailable, connectionError, onRefresh }: Props) {
-  const timeline = (batch?.timeline ?? []).slice().sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  const rawTimeline = (batch?.timeline ?? []).slice().sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  const timeline = rawTimeline.filter((event) => !HIDDEN_STAGES.has(event.stage));
   const hasData = timeline.length > 0;
 
   return (
@@ -65,26 +69,28 @@ export function TimelinePanel({ batch, eventsConnected, eventsAvailable, connect
       {!hasData ? (
         <p className="muted-text">Les évènements apparaîtront ici dès que le pipeline publie ses étapes.</p>
       ) : (
-        <ol className="timeline">
-          {timeline.map((event) => {
-            const meta = resolveStageMetadata(event);
-            return (
-              <li key={event.id}>
-                <div className={`timeline-dot kind-${event.kind}`} />
-                <div className="timeline-body">
-                  <div className="timeline-chip">{meta.label}</div>
-                  <p className="timeline-label">{event.label}</p>
-                  <p className="timeline-meta">
-                    {new Date(event.timestamp).toLocaleString()}
-                    {typeof event.progress === "number" ? ` · ${event.progress}%` : ""}
-                  </p>
-                  {meta.description && <p className="timeline-description">{meta.description}</p>}
-                  {renderDetails(event.details)}
-                </div>
-              </li>
-            );
-          })}
-        </ol>
+        <div className="timeline-scroll">
+          <ol className="timeline">
+            {timeline.map((event) => {
+              const meta = resolveStageMetadata(event);
+              return (
+                <li key={event.id}>
+                  <div className={`timeline-dot kind-${event.kind}`} />
+                  <div className="timeline-body">
+                    <div className="timeline-chip">{meta.label}</div>
+                    <p className="timeline-label">{event.label}</p>
+                    <p className="timeline-meta">
+                      {new Date(event.timestamp).toLocaleString()}
+                      {typeof event.progress === "number" ? ` · ${event.progress}%` : ""}
+                    </p>
+                    {meta.description && <p className="timeline-description">{meta.description}</p>}
+                    {renderDetails(event.details)}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
       )}
     </section>
   );
@@ -116,43 +122,46 @@ function resolveStageMetadata(event: BatchTimelineEntry): { label: string; descr
   }
 }
 
+const VISIBLE_DETAIL_KEYS = new Set(["fileCount", "hasMetadata", "hash", "message", "reportUrl", "report_url"]);
+
 function renderDetails(details?: Record<string, unknown>) {
   if (!details || Object.keys(details).length === 0) {
     return null;
   }
 
+  const entries = Object.entries(details).filter(([key]) => VISIBLE_DETAIL_KEYS.has(key));
+  if (entries.length === 0) {
+    return null;
+  }
+
   return (
-    <div className="timeline-details-grid">
-      {Object.entries(details).map(([key, value]) => (
-        <div key={key} className="timeline-detail-row">
-          <span className="timeline-detail-key">{translateDetailKey(key)}</span>
-          <span className="timeline-detail-value">{formatDetailValue(value)}</span>
-        </div>
-      ))}
-    </div>
+    <details className="timeline-details">
+      <summary>Détails techniques</summary>
+      <div className="timeline-details-grid">
+        {entries.map(([key, value]) => (
+          <div key={key} className="timeline-detail-row">
+            <span className="timeline-detail-key">{translateDetailKey(key)}</span>
+            <span className="timeline-detail-value">{formatDetailValue(value)}</span>
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }
 
 function translateDetailKey(key: string): string {
   switch (key) {
     case "fileCount":
-      return "Nombre de fichiers";
+      return "Nombre de fichiers déposés";
     case "hasMetadata":
-      return "Métadonnées";
+      return "Métadonnées détectées";
     case "hash":
-      return "Hash";
-    case "path":
-      return "Chemin";
+      return "Code d’intégrité";
+    case "reportUrl":
+    case "report_url":
+      return "Lien du rapport";
     case "message":
       return "Message";
-    case "languages":
-      return "Langues";
-    case "file":
-      return "Fichier";
-    case "position":
-      return "Position";
-    case "total":
-      return "Total";
     default:
       return key;
   }
@@ -160,6 +169,9 @@ function translateDetailKey(key: string): string {
 
 function formatDetailValue(value: unknown): string {
   if (typeof value === "string") {
+    if (value.startsWith("tmp/") || value.startsWith("/tmp/")) {
+      return "Lien technique disponible dans le journal";
+    }
     return value;
   }
   if (typeof value === "number") {

@@ -1,7 +1,7 @@
-import { AlertCircle, ArrowDownToLine, Hash } from "lucide-react";
+import { AlertCircle, ArrowDownToLine, Copy, Hash } from "lucide-react";
 
 import { downloadReport } from "../services/reports";
-import type { BatchSummary } from "../types/batch";
+import type { BatchSummary, ReportInsights } from "../types/batch";
 import { formatBytes } from "../utils/format";
 import { useToast } from "./ToastProvider";
 
@@ -31,7 +31,8 @@ export function ReportHero({ batch, onRefresh }: Props) {
   const { insights } = batch;
   const normalizedScore = insights?.risk?.normalizedScore;
   const scorePercent = typeof normalizedScore === "number" ? Math.round(normalizedScore * 100) : null;
-  const summaryText = insights?.summary?.text ?? insights?.geminiSummary ?? "Synthèse en cours de préparation…";
+  const summaryText =
+    insights?.summary?.text ?? insights?.geminiSummary ?? "Synthèse en cours de préparation…";
 
   const handleDownload = async () => {
     if (!batch.report?.downloadUrl) {
@@ -46,6 +47,16 @@ export function ReportHero({ batch, onRefresh }: Props) {
       console.error("Download failed", error);
       dismissToast(toastId);
       pushToast("Impossible de télécharger le rapport pour le moment.", "error");
+    }
+  };
+
+  const handleCopyHash = async (hash: string) => {
+    try {
+      await navigator.clipboard.writeText(hash);
+      pushToast("Code d’intégrité copié", "success");
+    } catch (error) {
+      console.error("Copy hash failed", error);
+      pushToast("Impossible de copier ce code pour le moment.", "error");
     }
   };
 
@@ -79,17 +90,16 @@ export function ReportHero({ batch, onRefresh }: Props) {
             <p className="hero-card-value">{scorePercent !== null ? `${scorePercent}%` : "N/A"}</p>
           </div>
           <p className="hero-card-caption">
-            Calculé à partir des observations locales (YOLO) et de la synthèse IA. Dernière mise à jour&nbsp;
+            Calculé à partir des constats automatisés et du diagnostic IA. Dernière mise à jour&nbsp;
             {insights?.risk?.createdAt ? new Date(insights.risk.createdAt).toLocaleString() : "—"}
           </p>
         </article>
 
         <article className="hero-card">
           <p className="hero-card-kicker">Synthèse IA</p>
-          <p className="hero-card-title">{insights?.summary?.status ?? insights?.geminiStatus ?? "En cours"}</p>
+          <p className="hero-card-title">{formatSummaryStatus(insights)}</p>
           <p className="hero-card-caption">
-            {insights?.summary?.source ? `Source : ${insights.summary.source}` : "Analyse générée via Gemini 2.0"}
-            {insights?.geminiModel ? ` · Modèle ${insights.geminiModel}` : ""}
+            {insights?.summary?.source ? formatSummarySource(insights.summary.source) : "Analyse automatique AUDEX"}
           </p>
           {insights?.summary?.warnings?.length ? (
             <ul className="hero-warning-list">
@@ -107,11 +117,16 @@ export function ReportHero({ batch, onRefresh }: Props) {
           <p className="hero-card-kicker">Statut blockchain</p>
           {batch.report?.hash ? (
             <>
-              <p className="hero-card-title">Hash disponible</p>
-              <p className="hero-card-caption hash">
-                <Hash size={14} />
-                {truncateHash(batch.report.hash)}
-              </p>
+              <p className="hero-card-title">Code d’intégrité disponible</p>
+              <div className="report-hash-row">
+                <p className="hero-card-caption hash">
+                  <Hash size={14} />
+                  {truncateHash(batch.report.hash)}
+                </p>
+                <button type="button" className="ghost-button" onClick={() => handleCopyHash(batch.report!.hash)}>
+                  <Copy size={14} /> Copier
+                </button>
+              </div>
             </>
           ) : (
             <>
@@ -154,6 +169,35 @@ function truncateHash(hash: string): string {
     return hash;
   }
   return `${hash.slice(0, 10)}…${hash.slice(-6)}`;
+}
+
+function formatSummaryStatus(insights?: ReportInsights): string {
+  const status = (insights?.summary?.status ?? insights?.geminiStatus ?? "").toLowerCase();
+  switch (status) {
+    case "ok":
+      return "Analyse terminée";
+    case "no_insights":
+      return "Analyse terminée (aucun écart majeur)";
+    case "disabled":
+      return "Analyse désactivée";
+    case "failed":
+      return "Analyse interrompue";
+    case "skipped":
+      return "Analyse non réalisée";
+    default:
+      return "Analyse en cours";
+  }
+}
+
+function formatSummarySource(source: string): string {
+  const normalized = source.toLowerCase();
+  if (normalized.includes("gemini")) {
+    return "Analyse IA automatisée";
+  }
+  if (normalized.includes("manual")) {
+    return "Analyse saisie manuellement";
+  }
+  return `Source ${source}`;
 }
 
 function formatStatus(status: BatchSummary["status"]): string {

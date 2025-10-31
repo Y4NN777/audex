@@ -108,22 +108,55 @@ function renderSummaryHeader(insights: ReportInsights | undefined) {
     );
   }
   const summary = insights.summary;
+  const statusLabel = formatSummaryStatus(summary?.status ?? insights.geminiStatus);
+  const sourceLabel = summary?.source ? formatSummarySource(summary.source) : undefined;
+  const durationLabel = summary?.durationMs ? `${Math.round(summary.durationMs / 1000)} s` : undefined;
   return (
     <div className="summary-header">
       <Info size={18} />
       <div>
         <p className="summary-status">
-          {summary?.status ?? insights.geminiStatus ?? "Synthèse en préparation"}
-          {summary?.source ? ` · Source ${summary.source}` : ""}
+          {statusLabel}
+          {sourceLabel ? ` · ${sourceLabel}` : ""}
+          {durationLabel ? ` · ${durationLabel}` : ""}
         </p>
         {summary?.text && <p className="summary-text">{summary.text}</p>}
-        {insights.geminiModel && (
-          <p className="muted-text subtle">
-            Généré via {insights.geminiModel}
-            {summary?.durationMs ? ` · ${Math.round(summary.durationMs / 1000)}s` : ""}
-          </p>
+        {!summary?.text && (
+          <p className="muted-text">La synthèse détaillée est en cours de rédaction par l’assistant IA.</p>
         )}
       </div>
     </div>
   );
+}
+
+function formatSummaryStatus(status?: string): string {
+  switch ((status ?? "").toLowerCase()) {
+    case "ok":
+      return "Analyse terminée";
+    case "no_insights":
+      return "Analyse terminée (aucun point critique)";
+    case "disabled":
+      return "Analyse désactivée";
+    case "failed":
+      return "Analyse interrompue";
+    case "skipped":
+      return "Analyse non effectuée";
+    default:
+      return "Synthèse en préparation";
+  }
+}
+
+function formatSummarySource(source: string): string {
+  if (!source) {
+    return "";
+  }
+  switch (source.toLowerCase()) {
+    case "google-gemini":
+    case "gemini":
+      return "Analyse IA automatique";
+    case "manual":
+      return "Analyse saisie manuellement";
+    default:
+      return `Source ${source}`;
+  }
 }

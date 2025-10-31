@@ -6,8 +6,6 @@ import { StatsStrip, buildStats } from "./components/StatsStrip";
 import { SyncControls } from "./components/SyncControls";
 import { UploadPanel } from "./components/UploadPanel";
 import { ReportHero } from "./components/ReportHero";
-import { ObservationsPanel } from "./components/ObservationsPanel";
-import { AnnexesPanel } from "./components/AnnexesPanel";
 import { TimelinePanel } from "./components/TimelinePanel";
 import { SummaryPanel } from "./components/SummaryPanel";
 import { useOnlineStatus } from "./hooks/useOnlineStatus";
@@ -207,11 +205,6 @@ function App() {
           <UploadPanel onUpload={handleUpload} isUploading={uploading} online={online} />
 
           <SummaryPanel batch={highlightedBatch} />
-
-          <div className="insights-grid">
-            <ObservationsPanel batch={highlightedBatch} />
-            <AnnexesPanel batch={highlightedBatch} />
-          </div>
         </div>
 
         <aside className="workspace-side">
