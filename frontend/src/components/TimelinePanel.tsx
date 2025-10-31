@@ -30,9 +30,26 @@ const HIDDEN_STAGES = new Set<string>([
   "analysis:status"
 ]);
 
+function dedupeTimeline(events: BatchTimelineEntry[]): BatchTimelineEntry[] {
+  const result: BatchTimelineEntry[] = [];
+  for (const event of events) {
+    const last = result[result.length - 1];
+    if (
+      last &&
+      last.stage === event.stage &&
+      new Date(last.timestamp).getTime() === new Date(event.timestamp).getTime() &&
+      (last.progress ?? null) === (event.progress ?? null)
+    ) {
+      continue;
+    }
+    result.push(event);
+  }
+  return result;
+}
+
 export function TimelinePanel({ batch, eventsConnected, eventsAvailable, connectionError, onRefresh }: Props) {
   const rawTimeline = (batch?.timeline ?? []).slice().sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-  const timeline = rawTimeline.filter((event) => !HIDDEN_STAGES.has(event.stage));
+  const timeline = dedupeTimeline(rawTimeline.filter((event) => !HIDDEN_STAGES.has(event.stage)));
   const hasData = timeline.length > 0;
 
   return (
