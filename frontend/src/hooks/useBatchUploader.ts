@@ -13,7 +13,7 @@ import {
 } from "../services/db";
 import { API_BASE_URL, api, parseApiError } from "../services/api";
 import { useBatchesStore } from "../state/useBatchesStore";
-import type { BatchStatus, BatchSummary, BatchTimelineEntry, ServerTimelineEvent } from "../types/batch";
+import type { BatchStatus, BatchSummary, BatchTimelineEntry, ServerTimelineEvent, StoredFile } from "../types/batch";
 import { resolveReportUrl } from "../services/reports";
 import { toFriendlyError } from "../utils/errors";
 
@@ -31,6 +31,14 @@ type UploadResponse = {
   stored_at: string;
   timeline?: ServerTimelineEvent[];
   report_url?: string | null;
+  files?: Array<{
+    filename: string;
+    content_type: string;
+    size_bytes: number;
+    checksum_sha256: string;
+    stored_path: string;
+    metadata?: Record<string, unknown> | null;
+  }>;
 };
 
 async function uploadToServer(batch: BatchSummary): Promise<UploadResponse> {
@@ -82,6 +90,52 @@ export function useBatchUploader({ online }: { online: boolean }): UploadResult 
     [mergeBatch]
   );
 
+  const mapServerFiles = useCallback((response: UploadResponse): StoredFile[] | undefined => {
+    if (!response.files?.length) {
+      return undefined;
+    }
+    return response.files.map((file) => ({
+      id: file.filename,
+      name: file.filename,
+      size: file.size_bytes,
+      type: file.content_type,
+      lastModified: Date.now(),
+      checksum: file.checksum_sha256,
+      storedPath: file.stored_path,
+      metadata: file.metadata ?? undefined
+    }));
+  }, []);
+
+  const applyServerSnapshot = useCallback(
+    async (batchId: string, response: UploadResponse) => {
+      const normalizedStatus = response.status as BatchStatus;
+      const report = response.report_hash
+        ? {
+            hash: response.report_hash,
+            downloadUrl: response.report_url
+              ? absolutizeReportUrl(response.report_url)
+              : resolveReportUrl(batchId)
+          }
+        : undefined;
+      const updates: Partial<BatchSummary> = {
+        status: normalizedStatus,
+        lastError: undefined,
+        report,
+        syncedAt: new Date().toISOString()
+      };
+      if (response.stored_at) {
+        updates.createdAt = response.stored_at;
+      }
+      const serverFiles = mapServerFiles(response);
+      if (serverFiles) {
+        updates.files = serverFiles;
+      }
+      await mergePersisted(batchId, updates);
+      updateStatus(batchId, normalizedStatus, { lastError: undefined, report });
+    },
+    [mapServerFiles, mergePersisted, updateStatus]
+  );
+
   const submitFiles = useCallback(
     async (files: File[]): Promise<string> => {
       if (!files.length) {
@@ -106,27 +160,16 @@ export function useBatchUploader({ online }: { online: boolean }): UploadResult 
       setUploading(true);
       const launchUpload = async () => {
         try {
-          updateStatus(batch.id, "processing");
           setProgress(batch.id, 10);
-          await mergePersisted(batch.id, { status: "processing", progress: 10 });
+          await mergePersisted(batch.id, { status: "processing", progress: 10, lastError: undefined });
 
           const response = await uploadToServer(batch);
-          const normalizedStatus = response.status as BatchStatus;
-          const report = response.report_hash
-            ? {
-                hash: response.report_hash,
-                downloadUrl: response.report_url
-                  ? absolutizeReportUrl(response.report_url)
-                  : resolveReportUrl(batch.id)
-              }
-            : undefined;
           const latestProgress = await persistTimelineEvents(batch.id, response.timeline);
           if (typeof latestProgress === "number") {
             setProgress(batch.id, latestProgress);
             await mergePersisted(batch.id, { progress: latestProgress });
           }
-          updateStatus(batch.id, normalizedStatus, { lastError: undefined, report });
-          await mergePersisted(batch.id, { status: normalizedStatus, lastError: undefined, report });
+          await applyServerSnapshot(batch.id, response);
         } catch (error) {
           if (axios.isAxiosError(error) && error.code === "ECONNABORTED") {
             const message =
@@ -181,8 +224,7 @@ export function useBatchUploader({ online }: { online: boolean }): UploadResult 
           setProgress(batch.id, latestProgress);
           await mergePersisted(batch.id, { progress: latestProgress });
         }
-        updateStatus(batch.id, normalizedStatus, { lastError: undefined, report });
-        await mergePersisted(batch.id, { status: normalizedStatus, lastError: undefined, report });
+        await applyServerSnapshot(batch.id, response);
       } catch (error) {
         if (axios.isAxiosError(error) && error.code === "ECONNABORTED") {
           const message =
@@ -221,22 +263,12 @@ export async function synchronizePendingBatches(): Promise<BatchSummary[]> {
       await mergeBatchRecord(batch.id, { status: "processing" });
 
       const response = await uploadToServer(batch);
-      const normalizedStatus = response.status as BatchStatus;
-      const report = response.report_hash
-        ? {
-            hash: response.report_hash,
-            downloadUrl: response.report_url
-              ? absolutizeReportUrl(response.report_url)
-              : resolveReportUrl(batch.id)
-          }
-        : undefined;
       const latestProgress = await persistTimelineEvents(batch.id, response.timeline);
       if (typeof latestProgress === "number") {
         useBatchesStore.getState().setProgress(batch.id, latestProgress);
         await mergeBatchRecord(batch.id, { progress: latestProgress });
       }
-      useBatchesStore.getState().updateStatus(batch.id, normalizedStatus, { lastError: undefined, report });
-      await mergeBatchRecord(batch.id, { status: normalizedStatus, lastError: undefined, report });
+      await applyServerSnapshot(batch.id, response);
     } catch (error) {
       if (axios.isAxiosError(error) && error.code === "ECONNABORTED") {
         const message =
