@@ -9,6 +9,7 @@ import { ReportHero } from "./components/ReportHero";
 import { ObservationsPanel } from "./components/ObservationsPanel";
 import { AnnexesPanel } from "./components/AnnexesPanel";
 import { TimelinePanel } from "./components/TimelinePanel";
+import { SummaryPanel } from "./components/SummaryPanel";
 import { useOnlineStatus } from "./hooks/useOnlineStatus";
 import { useBatchUploader, synchronizePendingBatches } from "./hooks/useBatchUploader";
 import { useBatchEvents } from "./hooks/useBatchEvents";
@@ -157,6 +158,20 @@ function App() {
     void syncBatchFromServer(highlightedBatch.id);
   }, [highlightedBatch, online]);
 
+  useEffect(() => {
+    if (!online || !highlightedBatch) {
+      return;
+    }
+    const requiresHydration =
+      !highlightedBatch.insights ||
+      !highlightedBatch.insights.syncedAt ||
+      (highlightedBatch.observations?.length ?? 0) === 0 ||
+      (highlightedBatch.ocrTexts?.length ?? 0) === 0;
+    if (requiresHydration) {
+      void syncBatchFromServer(highlightedBatch.id);
+    }
+  }, [online, highlightedBatch]);
+
   return (
     <div className="app-shell">
       <ReportHero batch={highlightedBatch} onRefresh={handleRefreshHighlight} />
@@ -189,6 +204,8 @@ function App() {
           />
 
           <UploadPanel onUpload={handleUpload} isUploading={uploading} online={online} />
+
+          <SummaryPanel batch={highlightedBatch} />
 
           <div className="insights-grid">
             <ObservationsPanel batch={highlightedBatch} />
