@@ -30,13 +30,10 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     return _session_factory
 
 
-@asynccontextmanager
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    session = get_session_factory()()
-    try:
+    session_factory = get_session_factory()
+    async with session_factory() as session:
         yield session
-    finally:
-        await session.close()
 
 
 async def init_db() -> None:
