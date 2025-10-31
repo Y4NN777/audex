@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.core.config import settings
 from app.db.session import get_session, get_session_factory
@@ -185,7 +185,16 @@ async def create_batch(
     processor.enqueue(batch_id, stored_files)
 
     await event_bus.publish({"batchId": batch_id, "status": "processing"})
-    asyncio.create_task(_run_pipeline_task(batch_id, stored_files, storage_root))
+    background_session_factory: async_sessionmaker[AsyncSession] | None = session.info.get("session_factory")  # type: ignore[arg-type]
+    if background_session_factory is None:
+        bind = session.get_bind()
+        if isinstance(bind, AsyncEngine):
+            background_session_factory = async_sessionmaker(bind, expire_on_commit=False, class_=AsyncSession)
+        elif hasattr(session, "bind") and isinstance(session.bind, AsyncEngine):
+            background_session_factory = async_sessionmaker(session.bind, expire_on_commit=False, class_=AsyncSession)
+        else:
+            background_session_factory = get_session_factory()
+    asyncio.create_task(_run_pipeline_task(batch_id, stored_files, storage_root, background_session_factory))
 
     return BatchResponse(
         batch_id=batch_id,
@@ -363,8 +372,9 @@ async def _run_pipeline_task(
     batch_id: str,
     stored_files: Sequence[FileMetadata],
     storage_root: Path,
+    session_factory: async_sessionmaker[AsyncSession] | None = None,
 ) -> None:
-    session_factory = get_session_factory()
+    session_factory = session_factory or get_session_factory()
     timeline_events: list[dict[str, Any]] = []
     db_event_records: list[dict[str, Any]] = []
     stage_progress_map: dict[str, int] = {
@@ -598,7 +608,14 @@ async def _run_pipeline_task(
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("Batch %s failed during processing: %s", batch_id, exc)
-            await batch_repo.update_batch(session, batch_id, status="failed", last_error=str(exc))
+            try:
+                await session.rollback()
+            except Exception as rollback_error:  # noqa: BLE001
+                logger.warning("Rollback failed for batch %s: %s", batch_id, rollback_error)
+            try:
+                await batch_repo.update_batch(session, batch_id, status="failed", last_error=str(exc))
+            except Exception as update_error:  # noqa: BLE001
+                logger.error("Failed to persist failure state for batch %s: %s", batch_id, update_error)
             error_stage = build_stage(
                 "pipeline:error",
                 "Erreur durant le traitement",
@@ -614,7 +631,10 @@ async def _run_pipeline_task(
                 }
             )
         finally:
-            await persist_events(session)
+            try:
+                await persist_events(session)
+            except Exception as persist_error:  # noqa: BLE001
+                logger.exception("Failed to persist timeline events for batch %s: %s", batch_id, persist_error)
 
 
 def _serialize_batch(batch: AuditBatch) -> BatchResponse:

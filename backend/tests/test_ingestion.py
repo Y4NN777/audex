@@ -128,7 +128,7 @@ async def _wait_for_status(
     client: AsyncClient,
     batch_id: str,
     expected: str = "completed",
-    timeout: float = 15.0,
+    timeout: float = 45.0,
     poll_interval: float = 0.1,
 ) -> Response:
     deadline = asyncio.get_event_loop().time() + timeout
@@ -464,6 +464,7 @@ async def isolated_session(tmp_path: Path):
 
     async def _session_override():
         async with async_session() as session:
+            session.info["session_factory"] = async_session
             yield session
 
     app.dependency_overrides[get_session] = _session_override

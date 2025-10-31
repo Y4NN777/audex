@@ -48,6 +48,7 @@ class AdvancedAnalyzer:
         self.api_key = settings.GEMINI_API_KEY
         self.model = settings.GEMINI_MODEL
         self.timeout = settings.GEMINI_TIMEOUT_SECONDS
+        self.max_total_seconds = max(0, settings.GEMINI_MAX_TOTAL_SECONDS)
         self.max_retries = settings.GEMINI_MAX_RETRIES
 
     def analyze(
@@ -313,7 +314,17 @@ def _call_gemini(self, image_path: Path, prompt: str, prompt_hash: str) -> str:
 
         last_error: Exception | None = None
         attempts = self.max_retries + 1
+        start_time = time.monotonic()
+        deadline = start_time + self.max_total_seconds if self.max_total_seconds else None
         for attempt in range(1, attempts + 1):
+            if deadline is not None and time.monotonic() >= deadline:
+                logger.warning(
+                    "Gemini retry budget of %.1fs exhausted before attempt %s for %s",
+                    self.max_total_seconds,
+                    attempt,
+                    image_path.name,
+                )
+                break
             try:
                 logger.debug("Gemini call attempt %s for %s (hash=%s)", attempt, image_path.name, prompt_hash)
                 response = model.generate_content(
@@ -344,14 +355,26 @@ def _call_gemini(self, image_path: Path, prompt: str, prompt_hash: str) -> str:
                 if attempt < attempts:
                     if retry_delay is not None and retry_delay > 0:
                         sleep_duration = min(retry_delay + 0.5, 90.0)
-                        logger.info(
-                            "Waiting %.2fs before retrying Gemini for %s (quota hint).",
-                            sleep_duration,
-                            image_path.name,
-                        )
-                        time.sleep(sleep_duration)
                     else:
-                        time.sleep(min(2 * attempt, 6))
+                        sleep_duration = min(2 * attempt, 6)
+                    if deadline is not None:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            logger.warning("No remaining retry budget for Gemini (image %s).", image_path.name)
+                            break
+                        sleep_duration = min(sleep_duration, max(0.0, remaining))
+                        if sleep_duration <= 0:
+                            logger.warning(
+                                "Retry delay exhausted budget; skipping additional waits for %s.",
+                                image_path.name,
+                            )
+                            continue
+                    logger.info(
+                        "Waiting %.2fs before retrying Gemini for %s (quota hint).",
+                        sleep_duration,
+                        image_path.name,
+                    )
+                    time.sleep(sleep_duration)
                     continue
                 raise
 

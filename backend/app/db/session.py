@@ -33,6 +33,7 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     session_factory = get_session_factory()
     async with session_factory() as session:
+        session.info.setdefault("session_factory", session_factory)
         yield session
 
 

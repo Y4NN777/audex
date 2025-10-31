@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str | None = Field(default=None)
     GEMINI_MODEL: str = Field(default="gemini-2.0-flash-exp")
     GEMINI_TIMEOUT_SECONDS: int = Field(default=15, description="Timeout per Gemini request (seconds)")
+    GEMINI_MAX_TOTAL_SECONDS: int = Field(
+        default=600,
+        description="Budget de temps cumulé (secondes) alloué aux tentatives Gemini pour un fichier",
+    )
     GEMINI_MAX_RETRIES: int = Field(default=2, description="Maximum retries for Gemini calls")
     EASY_OCR_DOWNLOAD_ENABLED: bool = Field(
         default=True,
