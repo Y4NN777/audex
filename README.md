@@ -4,6 +4,8 @@ AUDEX est une application web qui automatise l’analyse d’audits de sûreté 
 
 
 <img width="1457" height="959" alt="image" src="https://github.com/user-attachments/assets/c0170c07-4e09-4d73-a808-fe435d19f851" />
+<img width="1457" height="959" alt="image" src="https://github.com/user-attachments/assets/3b9d2189-347c-4af1-89f9-4893be75042d" />
+
 
 
 
