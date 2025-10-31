@@ -10,7 +10,7 @@ type FileRecord = {
 };
 
 const DB_NAME = "audex-client";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const BATCH_STORE = "batches";
 const FILES_STORE = "files";
 
@@ -74,7 +74,10 @@ function normalizeBatch<T extends BatchSummary>(batch: T): T {
   return {
     ...batch,
     timeline: Array.isArray(batch.timeline) ? batch.timeline : [],
-    progress: typeof batch.progress === "number" ? batch.progress : 0
+    progress: typeof batch.progress === "number" ? batch.progress : 0,
+    observations: Array.isArray(batch.observations) ? batch.observations : undefined,
+    ocrTexts: Array.isArray(batch.ocrTexts) ? batch.ocrTexts : undefined,
+    insights: batch.insights ?? undefined
   };
 }
 

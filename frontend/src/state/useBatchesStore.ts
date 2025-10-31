@@ -4,7 +4,10 @@ import type { BatchStatus, BatchSummary, BatchTimelineEntry } from "../types/bat
 
 const ensureProgress = (batch: BatchSummary): BatchSummary => ({
   ...batch,
-  progress: typeof batch.progress === "number" ? batch.progress : 0
+  progress: typeof batch.progress === "number" ? batch.progress : 0,
+  timeline: Array.isArray(batch.timeline) ? batch.timeline : [],
+  observations: Array.isArray(batch.observations) ? batch.observations : batch.observations ?? undefined,
+  ocrTexts: Array.isArray(batch.ocrTexts) ? batch.ocrTexts : batch.ocrTexts ?? undefined
 });
 
 type BatchesState = {

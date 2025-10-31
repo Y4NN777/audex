@@ -5,11 +5,18 @@ import { BatchSection } from "./components/BatchSection";
 import { StatsStrip, buildStats } from "./components/StatsStrip";
 import { SyncControls } from "./components/SyncControls";
 import { UploadPanel } from "./components/UploadPanel";
+import { ReportHero } from "./components/ReportHero";
+import { ObservationsPanel } from "./components/ObservationsPanel";
+import { AnnexesPanel } from "./components/AnnexesPanel";
+import { TimelinePanel } from "./components/TimelinePanel";
 import { useOnlineStatus } from "./hooks/useOnlineStatus";
 import { useBatchUploader, synchronizePendingBatches } from "./hooks/useBatchUploader";
 import { useBatchEvents } from "./hooks/useBatchEvents";
 import { loadBatches } from "./services/db";
 import { useBatchesStore } from "./state/useBatchesStore";
+import { useBatchHydrator } from "./hooks/useBatchHydrator";
+import { syncBatchFromServer } from "./services/batches";
+import { formatBytes } from "./utils/format";
 
 function App() {
   const online = useOnlineStatus();
@@ -18,6 +25,7 @@ function App() {
   const batches = useBatchesStore((state) => state.batches);
   const [syncing, setSyncing] = useState(false);
   const { connected: eventsConnected, available: eventsAvailable } = useBatchEvents(online);
+  useBatchHydrator(online);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,8 +75,26 @@ function App() {
     () => batches.filter((batch) => batch.status === "completed" || batch.status === "processing"),
     [batches]
   );
+  const completedBatches = useMemo(() => batches.filter((batch) => batch.status === "completed"), [batches]);
 
   const pendingCount = pendingBatches.length;
+
+  const { averageRisk, criticalObservations } = useMemo(() => {
+    if (completedBatches.length === 0) {
+      return { averageRisk: null, criticalObservations: 0 };
+    }
+    const riskValues = completedBatches
+      .map((batch) => batch.insights?.risk?.normalizedScore)
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    const avg = riskValues.length
+      ? riskValues.reduce((total, value) => total + value, 0) / riskValues.length
+      : null;
+    const critical = completedBatches.reduce((acc, batch) => {
+      const observations = batch.observations ?? [];
+      return acc + observations.filter((obs) => (obs.severity ?? "").toLowerCase() === "high").length;
+    }, 0);
+    return { averageRisk: avg, criticalObservations: critical };
+  }, [completedBatches]);
 
   const stats = useMemo(() => {
     const totalFiles = batches.reduce((total, batch) => total + batch.files.length, 0);
@@ -81,9 +107,12 @@ function App() {
       totalBatches: batches.length,
       pending: pendingCount,
       totalFiles,
-      totalSize: formatBytes(totalSizeBytes)
+      totalSize: formatBytes(totalSizeBytes),
+      completed: completedBatches.length,
+      averageRisk,
+      criticalObservations
     });
-  }, [batches, pendingCount]);
+  }, [batches, pendingCount, completedBatches.length, averageRisk, criticalObservations]);
 
   const triggerSync = useCallback(async () => {
     try {
@@ -111,13 +140,26 @@ function App() {
     setBatches(items);
   }, [pendingBatches, removeBatch, setBatches]);
 
+  const highlightedBatch = useMemo(() => {
+    if (completedBatches.length > 0) {
+      return completedBatches[0];
+    }
+    if (syncedBatches.length > 0) {
+      return syncedBatches[0];
+    }
+    return null;
+  }, [completedBatches, syncedBatches]);
+
+  const handleRefreshHighlight = useCallback(() => {
+    if (!highlightedBatch || !online) {
+      return;
+    }
+    void syncBatchFromServer(highlightedBatch.id);
+  }, [highlightedBatch, online]);
+
   return (
     <div className="app-shell">
-      <header>
-        <h1>AUDEX shell</h1>
-        <p>Déposez vos fichiers meme sans internet, suivez la synchronisation et consolidez vos audits en mode résilient une fois en ligne.</p>
-      </header>
-
+      <ReportHero batch={highlightedBatch} onRefresh={handleRefreshHighlight} />
       <ConnectionBanner
         syncing={syncing}
         onBackOnline={async () => {
@@ -133,33 +175,48 @@ function App() {
 
       <StatsStrip stats={stats} />
 
-      <SyncControls
-        online={online}
-        pendingCount={pendingCount}
-        syncing={syncing}
-        eventsConnected={eventsConnected}
-        eventsAvailable={eventsAvailable}
-        onSync={triggerSync}
-        onBulkRetry={handleBulkRetry}
-        onClearPending={handleClearPending}
-      />
+      <div className="workspace-grid">
+        <div className="workspace-main">
+          <SyncControls
+            online={online}
+            pendingCount={pendingCount}
+            syncing={syncing}
+            eventsConnected={eventsConnected}
+            eventsAvailable={eventsAvailable}
+            onSync={triggerSync}
+            onBulkRetry={handleBulkRetry}
+            onClearPending={handleClearPending}
+          />
 
-      <UploadPanel onUpload={handleUpload} isUploading={uploading} online={online} />
+          <UploadPanel onUpload={handleUpload} isUploading={uploading} online={online} />
 
-      <BatchSection
-        title="Lots synchronisés"
-        batches={syncedBatches}
-        emptyMessage="Aucun lot n'a encore été envoyé."
-        onRetry={retryBatch}
-      />
+          <div className="insights-grid">
+            <ObservationsPanel batch={highlightedBatch} />
+            <AnnexesPanel batch={highlightedBatch} />
+          </div>
+        </div>
 
-      <BatchSection
-        title="Lots en attente"
-        batches={pendingBatches}
-        emptyMessage="Pas de lot en attente de synchronisation."
-        onRetry={retryBatch}
-        onRemove={removeBatch}
-      />
+        <aside className="workspace-side">
+          <TimelinePanel batch={highlightedBatch} />
+        </aside>
+      </div>
+
+      <div className="batches-grid">
+        <BatchSection
+          title="Lots synchronisés"
+          batches={syncedBatches}
+          emptyMessage="Aucun lot n'a encore été envoyé."
+          onRetry={retryBatch}
+        />
+
+        <BatchSection
+          title="Lots en attente"
+          batches={pendingBatches}
+          emptyMessage="Pas de lot en attente de synchronisation."
+          onRetry={retryBatch}
+          onRemove={removeBatch}
+        />
+      </div>
 
       {syncedBatches.length === 0 && pendingBatches.length === 0 && (
         <section className="card muted next-steps">
@@ -176,11 +233,3 @@ function App() {
 }
 
 export default App;
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 o";
-  const units = ["o", "Ko", "Mo", "Go", "To"];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  const value = bytes / Math.pow(1024, i);
-  return `${value.toFixed(value < 10 ? 1 : 0)} ${units[i]}`;
-}

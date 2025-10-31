@@ -1,4 +1,4 @@
-import { CheckCircle2, Clock, Files } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, Files, GaugeCircle } from "lucide-react";
 
 type Stat = {
   label: string;
@@ -32,14 +32,20 @@ export function buildStats({
   totalBatches,
   pending,
   totalFiles,
-  totalSize
+  totalSize,
+  completed,
+  averageRisk,
+  criticalObservations
 }: {
   totalBatches: number;
   pending: number;
   totalFiles: number;
   totalSize: string;
+  completed: number;
+  averageRisk: number | null;
+  criticalObservations: number;
 }): Stat[] {
-  return [
+  const stats: Stat[] = [
     {
       label: "Lots au total",
       value: totalBatches.toString(),
@@ -47,14 +53,36 @@ export function buildStats({
       icon: <Files size={24} strokeWidth={1.8} />
     },
     {
+      label: "Lots complétés",
+      value: completed.toString(),
+      caption: completed === totalBatches ? "Synchronisation à jour" : "Analyses en cours",
+      icon: <CheckCircle2 size={24} strokeWidth={1.8} />
+    },
+    {
       label: "Fichiers enregistrés",
       value: totalFiles.toString(),
-      icon: <CheckCircle2 size={24} strokeWidth={1.8} />
+      icon: <Activity size={24} strokeWidth={1.8} />
     },
     {
       label: "Volume stocké",
       value: totalSize,
-      icon: <Clock size={24} strokeWidth={1.8} />
+      icon: <GaugeCircle size={24} strokeWidth={1.8} />
     }
   ];
+
+  stats.push({
+    label: "Score moyen",
+    value: averageRisk !== null ? `${Math.round(averageRisk * 100)}%` : "N/A",
+    caption: averageRisk !== null ? "Score normalisé" : "En attente de données",
+    icon: <GaugeCircle size={24} strokeWidth={1.8} />
+  });
+
+  stats.push({
+    label: "Observations critiques",
+    value: criticalObservations.toString(),
+    caption: "Sévérité « high »",
+    icon: <AlertTriangle size={24} strokeWidth={1.8} />
+  });
+
+  return stats;
 }
