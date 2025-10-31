@@ -377,6 +377,41 @@ async def _run_pipeline_task(
     session_factory = session_factory or get_session_factory()
     timeline_events: list[dict[str, Any]] = []
     db_event_records: list[dict[str, Any]] = []
+    stage_seen_keys: set[tuple[str, int | None, int]] = set()
+    PUBLIC_DETAIL_KEYS = {
+        "fileCount",
+        "hasMetadata",
+        "hasRisk",
+        "observationCount",
+        "score",
+        "status",
+        "hash",
+        "reportUrl",
+        "report_url",
+        "message",
+    }
+
+    def _sanitize_details(details: dict[str, Any] | None) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        if not details:
+            return None, None
+
+        public: dict[str, Any] = {}
+        technical: dict[str, Any] = {}
+
+        for key, value in details.items():
+            normalized_key = str(key)
+            if normalized_key in {"file", "filename"}:
+                if isinstance(value, str):
+                    public["document"] = Path(value).name
+                else:
+                    public["document"] = value
+                continue
+            if normalized_key in PUBLIC_DETAIL_KEYS:
+                public[normalized_key] = value
+                continue
+            technical[normalized_key] = value
+
+        return (public or None, technical or None)
     stage_progress_map: dict[str, int] = {
         "ingestion:received": 5,
         "metadata:extracted": 15,
@@ -409,8 +444,17 @@ async def _run_pipeline_task(
         kind: str = "info",
         details: dict[str, Any] | None = None,
         progress: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         timestamp = datetime.now(tz=timezone.utc)
+        progress_value = resolve_progress(stage_code, details, progress)
+        coarse_ts = int(timestamp.timestamp())
+        dedupe_key = (stage_code, progress_value, coarse_ts)
+        if dedupe_key in stage_seen_keys:
+            return None
+        stage_seen_keys.add(dedupe_key)
+
+        public_details, technical_details = _sanitize_details(details)
+
         stage: dict[str, Any] = {
             "eventId": uuid4().hex,
             "code": stage_code,
@@ -418,11 +462,12 @@ async def _run_pipeline_task(
             "kind": kind,
             "timestamp": timestamp.isoformat(),
         }
-        if details:
-            stage["details"] = details
-        resolved_progress = resolve_progress(stage_code, details, progress)
-        if resolved_progress is not None:
-            stage["progress"] = max(0, min(100, resolved_progress))
+        if public_details:
+            stage["details"] = public_details
+        if technical_details:
+            stage["technicalDetails"] = technical_details
+        if progress_value is not None:
+            stage["progress"] = max(0, min(100, progress_value))
         timeline_events.append(stage)
         db_event_records.append(
             {
@@ -431,7 +476,7 @@ async def _run_pipeline_task(
                 "kind": kind,
                 "timestamp": timestamp,
                 "progress": stage.get("progress"),
-                "details": details,
+                "details": public_details,
             }
         )
         return stage
@@ -448,7 +493,8 @@ async def _run_pipeline_task(
         progress: int | None = None,
     ) -> None:
         stage = build_stage(stage_code, label, kind=kind, details=details, progress=progress)
-        await publish_stage(stage)
+        if stage is not None:
+            await publish_stage(stage)
 
     def schedule_stage(
         stage_code: str,
@@ -459,7 +505,8 @@ async def _run_pipeline_task(
         progress: int | None = None,
     ) -> None:
         stage = build_stage(stage_code, label, kind=kind, details=details, progress=progress)
-        asyncio.create_task(publish_stage(stage))
+        if stage is not None:
+            asyncio.create_task(publish_stage(stage))
 
     async def persist_events(session: AsyncSession) -> None:
         if db_event_records:
@@ -591,15 +638,15 @@ async def _run_pipeline_task(
                 progress=100,
             )
             report_path_fragment = f"{settings.API_V1_PREFIX}/ingestion/reports/{batch_id}"
-            await event_bus.publish(
-                {
-                    "batchId": batch_id,
-                    "status": "completed",
-                    "reportHash": artifact.checksum_sha256,
-                    "reportUrl": report_path_fragment,
-                    "stage": final_stage,
-                }
-            )
+            completion_payload: dict[str, Any] = {
+                "batchId": batch_id,
+                "status": "completed",
+                "reportHash": artifact.checksum_sha256,
+                "reportUrl": report_path_fragment,
+            }
+            if final_stage is not None:
+                completion_payload["stage"] = final_stage
+            await event_bus.publish(completion_payload)
             logger.info(
                 "Batch %s completed successfully (report=%s, status=%s)",
                 batch_id,
@@ -622,14 +669,14 @@ async def _run_pipeline_task(
                 kind="error",
                 details={"message": str(exc)},
             )
-            await event_bus.publish(
-                {
-                    "batchId": batch_id,
-                    "status": "failed",
-                    "error": str(exc),
-                    "stage": error_stage,
-                }
-            )
+            error_payload: dict[str, Any] = {
+                "batchId": batch_id,
+                "status": "failed",
+                "error": str(exc),
+            }
+            if error_stage is not None:
+                error_payload["stage"] = error_stage
+            await event_bus.publish(error_payload)
         finally:
             try:
                 await persist_events(session)

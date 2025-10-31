@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
@@ -22,6 +22,96 @@ from reportlab.platypus import (
 )
 
 from app.pipelines.models import OCRResult, Observation, PipelineResult, RiskBreakdown, RiskScore
+
+
+TIMELINE_BUSINESS_STEPS: list[dict[str, Any]] = [
+    {
+        "id": "deposit",
+        "label": "Dépôt des fichiers",
+        "codes": {"ingestion:received"},
+    },
+    {
+        "id": "preparation",
+        "label": "Préparation des données",
+        "codes": {"metadata:extracted"},
+    },
+    {
+        "id": "analysis",
+        "label": "Analyse automatique",
+        "codes": {
+            "analysis:start",
+            "analysis:status",
+            "analysis:complete",
+            "vision:start",
+            "vision:complete",
+            "ocr:warmup:start",
+            "ocr:warmup:complete",
+            "ocr:warmup:error",
+            "ocr:start",
+            "ocr:complete",
+            "ocr:error",
+        },
+    },
+    {
+        "id": "evaluation",
+        "label": "Évaluation & synthèse",
+        "codes": {"scoring:complete", "summary:complete"},
+    },
+    {
+        "id": "report",
+        "label": "Rapport final",
+        "codes": {"report:generated", "report:available"},
+    },
+    {
+        "id": "incident",
+        "label": "Incident de traitement",
+        "codes": {"pipeline:error"},
+    },
+]
+
+TIMELINE_STAGE_FALLBACK: dict[str, str] = {
+    "ingestion": "deposit",
+    "metadata": "preparation",
+    "vision": "analysis",
+    "ocr": "analysis",
+    "analysis": "analysis",
+    "scoring": "evaluation",
+    "summary": "evaluation",
+    "report": "report",
+    "pipeline": "incident",
+}
+
+TIMELINE_DETAIL_LABELS: dict[str, str] = {
+    "document": "Document traité",
+    "fileCount": "Fichiers reçus",
+    "hasMetadata": "Métadonnées détectées",
+    "hasRisk": "Score calculé",
+    "observationCount": "Observations relevées",
+    "score": "Score",
+    "status": "Statut",
+    "hash": "Code d'intégrité",
+    "reportUrl": "Lien du rapport",
+    "report_url": "Lien du rapport",
+    "message": "Message",
+}
+
+STATUS_LABELS: dict[str, str] = {
+    "ok": "Terminée",
+    "completed": "Terminée",
+    "no_content": "Aucun contenu",
+    "processing": "En cours",
+    "pending": "En attente",
+    "failed": "Échec",
+    "skipped": "Ignorée",
+    "disabled": "Non activée",
+    "fallback": "Mode dégradé",
+    "unknown": "Statut inconnu",
+}
+
+_TIMELINE_STAGE_LOOKUP: dict[str, dict[str, Any]] = {}
+for entry in TIMELINE_BUSINESS_STEPS:
+    for code in entry["codes"]:
+        _TIMELINE_STAGE_LOOKUP[code] = entry
 
 
 @dataclass(slots=True)
@@ -209,13 +299,12 @@ class ReportBuilder:
                 1,
                 ["Score global", f"{context.risk.total_score:.1f} pts (normalisé {normalized})"],
             )
+        summary_status_label = self._humanize_status(context.summary_status, default="Non générée")
+        summary_source = context.summary_source or context.gemini_provider or "-"
+        meta_rows.append(["Statut synthèse IA", f"{summary_status_label} ({summary_source})"])
         meta_rows.append(
-            [
-                "Statut synthèse IA",
-                f"{context.summary_status or 'non générée'} ({context.summary_source or context.gemini_provider or '-'})",
-            ]
+            ["Analyse IA automatisée", self._humanize_status(context.gemini_status, default="Non exécutée")]
         )
-        meta_rows.append(["Statut Gemini", context.gemini_status or "non exécutée"])
 
         meta_table = Table(meta_rows, colWidths=[7 * cm, 9 * cm])
         meta_table.setStyle(
@@ -282,13 +371,14 @@ class ReportBuilder:
         observations = list(context.observations)
         total_observations = len(observations)
         severe = sum(1 for obs in observations if (obs.severity or "").lower() == "high")
-        timeline_points = len(context.timeline)
+        timeline_rows = self._prepare_timeline_rows(context.timeline)
+        timeline_points = len(timeline_rows)
 
         metrics_rows = [
             ["Observations détectées", str(total_observations)],
             ["Observations critiques", str(severe)],
-            ["Synthèse IA", context.summary_status or "non générée"],
-            ["Statut Gemini", context.gemini_status or "non exécutée"],
+            ["Synthèse IA", self._humanize_status(context.summary_status, default="Non générée")],
+            ["Analyse IA", self._humanize_status(context.gemini_status, default="Non exécutée")],
             ["Timeline - étapes", str(timeline_points)],
         ]
         if context.risk:
@@ -333,10 +423,10 @@ class ReportBuilder:
             elements.append(Spacer(1, 12))
             elements.append(Paragraph("Aucun score de risque calculé pour ce lot.", self.body_style))
 
-        if context.timeline:
+        if timeline_rows:
             elements.append(Spacer(1, 18))
             elements.append(Paragraph("Timeline de traitement", self.section_title_style))
-            elements.append(self._build_timeline_table(context.timeline))
+            elements.append(self._build_timeline_table(timeline_rows))
         else:
             elements.append(Spacer(1, 12))
             elements.append(Paragraph("Timeline de traitement indisponible.", self.body_small_style))
@@ -382,11 +472,21 @@ class ReportBuilder:
         elements.append(Spacer(1, 12))
         elements.append(Paragraph("Métadonnées Gemini & synthèse", self.section_title_style))
         elements.append(self._build_metadata_table(context))
+        trace_table = self._build_traceability_table(context)
+        if trace_table:
+            elements.append(Spacer(1, 6))
+            elements.append(trace_table)
+        if context.summary_warnings:
+            elements.append(Spacer(1, 6))
+            elements.append(Paragraph("Avertissements du moteur IA :", self.body_style))
+            for warning in context.summary_warnings[:4]:
+                elements.append(Paragraph(f"• {warning}", self.body_small_style))
 
-        if context.timeline:
+        full_timeline_rows = self._prepare_timeline_rows(context.timeline, include_technical=True)
+        if full_timeline_rows:
             elements.append(Spacer(1, 12))
             elements.append(Paragraph("Timeline complète", self.section_title_style))
-            elements.append(self._build_timeline_table(context.timeline))
+            elements.append(self._build_timeline_table(full_timeline_rows))
 
         elements.append(Spacer(1, 18))
         elements.append(Paragraph("Clauses & disclaimers", self.section_title_style))
@@ -490,29 +590,29 @@ class ReportBuilder:
 
     def _build_summary_section(self, context: ReportContext) -> list:
         elements: list = []
-        status = context.summary_status or "non générée"
-        source = context.summary_source or "-"
+        status_label = self._humanize_status(context.summary_status, default="Non générée")
+        source = context.summary_source or context.gemini_provider or "-"
         summary_text = context.summary_text or "Synthèse indisponible."
 
-        elements.append(Paragraph(f"Statut : <b>{status}</b> (source : {source})", self.body_style))
+        elements.append(Paragraph(f"Statut : <b>{status_label}</b> (source : {source})", self.body_style))
         elements.append(Paragraph(summary_text, self.body_style))
 
         if context.summary_findings:
             elements.append(Spacer(1, 6))
             elements.append(Paragraph("Points clés :", self.body_style))
-            for finding in context.summary_findings:
+            for finding in context.summary_findings[:4]:
                 elements.append(Paragraph(f"• {finding}", self.body_style))
 
         if context.summary_recommendations:
             elements.append(Spacer(1, 6))
             elements.append(Paragraph("Recommandations :", self.body_style))
-            for rec in context.summary_recommendations:
+            for rec in context.summary_recommendations[:4]:
                 elements.append(Paragraph(f"• {rec}", self.body_style))
 
         if context.summary_warnings:
             elements.append(Spacer(1, 6))
             elements.append(Paragraph("Avertissements :", self.body_style))
-            for warning in context.summary_warnings:
+            for warning in context.summary_warnings[:4]:
                 elements.append(Paragraph(f"• {warning}", self.body_style))
 
         return elements
@@ -530,14 +630,10 @@ class ReportBuilder:
 
     def _build_metadata_table(self, context: ReportContext) -> Table:
         data = [
-            ["Statut Gemini", context.gemini_status or "non exécuté"],
-            ["Source Gemini", context.gemini_provider or "-"],
-            ["Durée Gemini (ms)", str(context.gemini_duration_ms or "-")],
-            ["Hash prompt Gemini", context.gemini_prompt_hash or "-"],
-            ["Statut synthèse", context.summary_status or "non générée"],
-            ["Source synthèse", context.summary_source or "-"],
-            ["Hash prompt synthèse", context.summary_prompt_hash or "-"],
-            ["Hash réponse synthèse", context.summary_response_hash or "-"],
+            ["Analyse IA automatique", self._humanize_status(context.gemini_status, default="Non exécutée")],
+            ["Durée de l'analyse", self._format_duration_ms(context.gemini_duration_ms)],
+            ["Synthèse IA", self._humanize_status(context.summary_status, default="Non générée")],
+            ["Canal utilisé", context.summary_source or context.gemini_provider or "-"],
         ]
         table = Table(data, hAlign="LEFT", colWidths=[6 * cm, 10 * cm])
         table.setStyle(
@@ -549,6 +645,34 @@ class ReportBuilder:
                     ("ALIGN", (0, 0), (-1, -1), "LEFT"),
                     ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
                     ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#f3f4f6"), colors.white]),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ]
+            )
+        )
+        return table
+
+    def _build_traceability_table(self, context: ReportContext) -> Table | None:
+        rows: list[list[str]] = []
+        if context.gemini_prompt_hash:
+            rows.append(["Hash prompt (analyse IA)", context.gemini_prompt_hash])
+        if context.summary_prompt_hash:
+            rows.append(["Hash prompt (synthèse)", context.summary_prompt_hash])
+        if context.summary_response_hash:
+            rows.append(["Hash réponse (synthèse)", context.summary_response_hash])
+        if not rows:
+            return None
+
+        table = Table(rows, hAlign="LEFT", colWidths=[6 * cm, 10 * cm])
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f172a")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#f9fafb"), colors.white]),
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
                     ("LEFTPADDING", (0, 0), (-1, -1), 6),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 6),
                 ]
@@ -585,21 +709,22 @@ class ReportBuilder:
         except Exception:  # noqa: BLE001
             return None
 
-    def _build_timeline_table(self, timeline: Sequence[dict[str, object]]) -> Table:
-        data = [["Horodatage", "Étape", "Détails", "Progression"]]
-        for stage in timeline:
-            timestamp = stage.get("timestamp") or stage.get("time") or "-"
-            label = stage.get("label") or stage.get("code") or "-"
-            details = stage.get("details") or {}
-            if isinstance(details, dict) and details:
-                detail_str = ", ".join(f"{k}: {v}" for k, v in details.items())
+    def _build_timeline_table(self, timeline_rows: Sequence[dict[str, Any]]) -> Table:
+        data: list[list[Any]] = [["Horodatage", "Phase", "Détails", "Progression"]]
+        for row in timeline_rows:
+            timestamp = row.get("timestamp") or "-"
+            label = row.get("phase") or "-"
+            detail_lines: Sequence[str] = row.get("detail_lines") or (row.get("details") or "-")
+            if isinstance(detail_lines, str):
+                details_paragraph = Paragraph(detail_lines, self.body_small_style)
             else:
-                detail_str = "-"
-            progress = stage.get("progress")
-            progress_str = f"{progress}%" if progress is not None else "-"
-            data.append([str(timestamp), str(label), detail_str, progress_str])
+                joined = "<br/>".join(detail_lines) if detail_lines else "-"
+                details_paragraph = Paragraph(joined, self.body_small_style)
+            progress = row.get("progress")
+            progress_str = f"{int(progress)}%" if isinstance(progress, (int, float)) else "-"
+            data.append([str(timestamp), str(label), details_paragraph, progress_str])
 
-        table = Table(data, hAlign="LEFT", colWidths=[5 * cm, 5 * cm, 6 * cm, 2 * cm])
+        table = Table(data, hAlign="LEFT", colWidths=[4.5 * cm, 5 * cm, 7 * cm, 2 * cm])
         table.setStyle(
             TableStyle(
                 [
@@ -607,6 +732,7 @@ class ReportBuilder:
                     ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                     ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                     ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                    ("VALIGN", (0, 1), (-1, -1), "TOP"),
                     ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#f3f4f6"), colors.white]),
                     ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
                     ("LEFTPADDING", (0, 0), (-1, -1), 6),
@@ -615,6 +741,172 @@ class ReportBuilder:
             )
         )
         return table
+
+    def _prepare_timeline_rows(
+        self,
+        timeline: Sequence[dict[str, object]],
+        *,
+        include_technical: bool = False,
+    ) -> list[dict[str, Any]]:
+        if not timeline:
+            return []
+
+        aggregated: dict[str, dict[str, Any]] = {}
+
+        baseline = datetime.min.replace(tzinfo=timezone.utc)
+
+        def _sort_key(item: dict[str, object]) -> tuple[datetime, str]:
+            ts = self._parse_timestamp(item.get("timestamp") or item.get("time")) or baseline
+            return (ts, str(item.get("code") or item.get("label") or ""))
+
+        for event in sorted(timeline, key=_sort_key):
+            code = str(event.get("code") or event.get("stage") or event.get("label") or "").strip()
+            if not code:
+                continue
+            stage_entry = _TIMELINE_STAGE_LOOKUP.get(code)
+            if stage_entry is None:
+                prefix = code.split(":", 1)[0]
+                fallback_id = TIMELINE_STAGE_FALLBACK.get(prefix)
+                if fallback_id:
+                    stage_entry = next((item for item in TIMELINE_BUSINESS_STEPS if item["id"] == fallback_id), None)
+            if stage_entry is None:
+                continue
+
+            step_id = stage_entry["id"]
+            timestamp = self._parse_timestamp(event.get("timestamp") or event.get("time"))
+            progress = event.get("progress")
+            label = str(event.get("label") or stage_entry["label"])
+            public_details = event.get("details") if isinstance(event.get("details"), dict) else None
+            technical_details = (
+                event.get("technicalDetails") if isinstance(event.get("technicalDetails"), dict) else None
+            )
+            kind = str(event.get("kind") or "info")
+
+            entry = aggregated.get(step_id)
+            if entry is None:
+                aggregated[step_id] = {
+                    "timestamp": timestamp,
+                    "message": label,
+                    "public_details": public_details,
+                    "technical_details": technical_details,
+                    "progress": progress if isinstance(progress, (int, float)) else None,
+                    "kind": kind,
+                }
+            else:
+                if timestamp and (entry["timestamp"] is None or timestamp >= entry["timestamp"]):
+                    entry["timestamp"] = timestamp
+                    entry["message"] = label
+                if isinstance(progress, (int, float)):
+                    previous = entry.get("progress")
+                    if previous is None or progress > previous:
+                        entry["progress"] = int(progress)
+                if public_details and not entry.get("public_details"):
+                    entry["public_details"] = public_details
+                if technical_details and not entry.get("technical_details"):
+                    entry["technical_details"] = technical_details
+                if kind == "error":
+                    entry["kind"] = "error"
+
+        rows: list[dict[str, Any]] = []
+        for business_stage in TIMELINE_BUSINESS_STEPS:
+            entry = aggregated.get(business_stage["id"])
+            if not entry:
+                continue
+            formatted_ts = self._format_timestamp(entry.get("timestamp"))
+            detail_parts: list[str] = []
+            message = entry.get("message")
+            if message and message != business_stage["label"]:
+                detail_parts.append(str(message))
+            public_map = entry.get("public_details") if isinstance(entry.get("public_details"), dict) else {}
+            technical_map = (
+                entry.get("technical_details") if include_technical and isinstance(entry.get("technical_details"), dict) else {}
+            )
+            for key, value in public_map.items():
+                detail_parts.append(self._format_detail_pair(str(key), value))
+            if include_technical:
+                for key, value in technical_map.items():
+                    if key in public_map:
+                        continue
+                    detail_parts.append(self._format_detail_pair(str(key), value, technical=True))
+            detail_lines = [part for part in detail_parts if part][:5]
+            if not detail_lines:
+                detail_lines = ["-"]
+            rows.append(
+                {
+                    "timestamp": formatted_ts,
+                    "phase": business_stage["label"],
+                    "detail_lines": detail_lines,
+                    "progress": entry.get("progress"),
+                    "kind": entry.get("kind", "info"),
+                }
+            )
+
+        return rows
+
+    def _format_timestamp(self, value: datetime | None) -> str:
+        if value is None:
+            return "-"
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone().strftime("%d/%m/%Y %H:%M:%S")
+
+    def _parse_timestamp(self, value: object) -> datetime | None:
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return None
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            try:
+                parsed = datetime.fromisoformat(text)
+            except ValueError:
+                return None
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed
+        return None
+
+    def _format_detail_pair(self, key: str, value: Any, *, technical: bool = False) -> str:
+        label = TIMELINE_DETAIL_LABELS.get(key, key)
+        if technical and label == key:
+            label = f"{label} (tech)"
+        elif technical:
+            label = f"{label} (tech)"
+        formatted_value = self._format_detail_value(value)
+        return f"{label}: {formatted_value}"
+
+    def _format_detail_value(self, value: Any) -> str:
+        if isinstance(value, bool):
+            return "Oui" if value else "Non"
+        if isinstance(value, (int, float)):
+            if isinstance(value, float):
+                return f"{value:.1f}"
+            return str(value)
+        if isinstance(value, str):
+            if value.startswith("tmp/") or value.startswith("/tmp/"):
+                return "Référence technique disponible dans les journaux"
+            return value
+        if value is None:
+            return "-"
+        return str(value)
+
+    def _humanize_status(self, status: str | None, default: str = "Non exécuté") -> str:
+        if not status:
+            return default
+        return STATUS_LABELS.get(status.lower(), status)
+
+    def _format_duration_ms(self, duration_ms: int | None) -> str:
+        if duration_ms is None:
+            return "-"
+        if duration_ms < 1000:
+            return "<1 s" if duration_ms > 0 else "-"
+        seconds = duration_ms / 1000
+        if seconds < 60:
+            return f"{seconds:.1f} s"
+        minutes = seconds / 60
+        return f"{minutes:.1f} min"
 
     def _compute_checksum(self, path: Path) -> str:
         hasher = hashlib.sha256()
