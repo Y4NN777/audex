@@ -180,6 +180,42 @@ class ReportSummaryService:
             if snippets:
                 ocr_snippets = "Extraits OCR :\n" + "\n".join(snippets)
 
+        summary_schema = {
+            "summary": {
+                "context": "Contexte global et niveau de risque",
+                "critical_areas": "Zones critiques et impacts business",
+                "priorities": "Points de vigilance prioritaires",
+                "major_risks": "Risques majeurs ou confirmation d'absence",
+            },
+            "key_findings": [
+                {
+                    "observation": "Description détaillée de l'observation",
+                    "context": "Contexte spécifique (lieu, moment, conditions)",
+                    "evidence": "Citations des preuves (extraits OCR, photos)",
+                    "impact": "Impact sur la sécurité/conformité",
+                    "severity": "Niveau de gravité",
+                    "confidence": "Niveau de confiance",
+                }
+            ],
+            "recommendations": [
+                {
+                    "action": "Description détaillée de l'action à entreprendre",
+                    "owner": "Équipe responsable suggérée",
+                    "timeline": "Délai de mise en œuvre recommandé",
+                    "effort": "Estimation de l'effort requis",
+                    "impact": "Impact attendu après mise en œuvre",
+                }
+            ],
+            "warnings": [
+                {
+                    "type": "missing_data|contradiction|expertise_needed",
+                    "description": "Description détaillée du warning",
+                    "impact": "Impact potentiel sur l'analyse",
+                }
+            ],
+        }
+        schema_json = json.dumps(summary_schema, ensure_ascii=False, indent=2)
+
         prompt = f"""
 Tu es un consultant QHSE. Fournis une synthèse claire et actionnable en français. Interdiction de citer les moteurs
 (YOLO, Gemini, pipeline).
@@ -221,42 +257,8 @@ Tu es un consultant QHSE. Fournis une synthèse claire et actionnable en frança
   * Contradiction entre observations terrain et analyse
   * Risque nécessitant une expertise complémentaire
 - Format JSON strict obligatoire, pas de commentaires additionnels
-
 ### Format attendu
-{{
-  "summary": {
-    "context": "Contexte global et niveau de risque",
-    "critical_areas": "Zones critiques et impacts business",
-    "priorities": "Points de vigilance prioritaires",
-    "major_risks": "Risques majeurs ou confirmation d'absence"
-  },
-  "key_findings": [
-    {
-      "observation": "Description détaillée de l'observation",
-      "context": "Contexte spécifique (lieu, moment, conditions)",
-      "evidence": "Citations des preuves (extraits OCR, photos)",
-      "impact": "Impact sur la sécurité/conformité",
-      "severity": "Niveau de gravité",
-      "confidence": "Niveau de confiance"
-    }
-  ],
-  "recommendations": [
-    {
-      "action": "Description détaillée de l'action à entreprendre",
-      "owner": "Équipe responsable suggérée",
-      "timeline": "Délai de mise en œuvre recommandé",
-      "effort": "Estimation de l'effort requis",
-      "impact": "Impact attendu après mise en œuvre"
-    }
-  ],
-  "warnings": [
-    {
-      "type": "missing_data|contradiction|expertise_needed",
-      "description": "Description détaillée du warning",
-      "impact": "Impact potentiel sur l'analyse"
-    }
-  ]
-}}
+{schema_json}
 """
         return prompt.strip()
 
