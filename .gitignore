@@ -32,9 +32,7 @@ Thumbs.db
 .vscode/
 
 docs/MVP_Issue_Backlog.md
-docs/IA_Pipeline_Implementation.md
-docs/Report_Implementation.md
-
+AGENTS.md
 backend/*.egg-info/
 docs/STATUS.md
 lot_de_test
