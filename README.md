@@ -21,7 +21,7 @@ AUDEX est une application web qui automatise l’analyse d’audits de sûreté 
 
 ---
 
-### Architecture cible v1.1
+### Architecture cible
 - **Frontend** : React + Vite, IndexedDB pour le cache local, mise en page responsive, visualisations via Leaflet/Folium et composants graphiques.
 - **Backend** : FastAPI (Python) exposant des services REST pour ingestion, analyse, scoring, rapports et authentification.
 - **Pipeline IA** : modules indépendants pour OCR (EasyOCR via PyTorch), vision (YOLOv8 + Multimodal LLM Gemini 2.0-Flash) , synthèse LLM (Llama 3.1 via Ollama ou Gemini 2.0-Flash) et moteur de scoring métier.
@@ -66,8 +66,8 @@ Le document `docs/Documentation Technique/Audex_Architecture_Technique_et_Concep
 ---
 
 ### Roadmap technique (résumé)
-- **MVP** : pipeline complet d’analyse, rapport automatique, UI React offline-first.
-- **Pilote** : administration, ancrage blockchain avancé, assistant conversationnel, cartographie, synchronisation différée, analyse approfondie de logs IT, API d’intégration partenaires, tests utilisateurs.
+- **MVP Core** : pipeline complet d’analyse, rapport automatique, UI React offline-first.
+- **Finalisation MVP & Pilote** : administration, ancrage blockchain avancé, assistant conversationnel, cartographie, synchronisation différée, analyse approfondie de logs IT, API d’intégration partenaires, tests utilisateurs.
 - **Production** : version mobile, monitoring/observabilité, migrations vers PostgreSQL et stockage objet, durcissement sécurité.
 
 ---
