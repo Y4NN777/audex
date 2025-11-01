@@ -21,10 +21,10 @@ AUDEX est une application web qui automatise l’analyse d’audits de sûreté 
 
 ---
 
-### Architecture cible (MVP)
+### Architecture cible v1.1
 - **Frontend** : React + Vite, IndexedDB pour le cache local, mise en page responsive, visualisations via Leaflet/Folium et composants graphiques.
 - **Backend** : FastAPI (Python) exposant des services REST pour ingestion, analyse, scoring, rapports et authentification.
-- **Pipeline IA** : modules indépendants pour OCR (EasyOCR via PyTorch), vision (YOLOv8), synthèse LLM (Llama 3.1 via Ollama) et moteur de scoring métier.
+- **Pipeline IA** : modules indépendants pour OCR (EasyOCR via PyTorch), vision (YOLOv8 + Multimodal LLM Gemini 2.0-Flash) , synthèse LLM (Llama 3.1 via Ollama ou Gemini 2.0-Flash) et moteur de scoring métier.
 - **Persistance** : SQLite embarqué pour le MVP (passage planifié à PostgreSQL), stockage de médias sur filesystem local ou objet.
 - **Traçabilité** : hachage SHA-256 des rapports, Web3.py pour ancrage sur réseau blockchain (testnet).
 - **Sécurité** : JWT pour l’authentification, RBAC, chiffrement AES des caches sensibles, validation stricte des uploads.
@@ -38,10 +38,13 @@ Le document `docs/Documentation Technique/Audex_Architecture_Technique_et_Concep
 1. **Ingestion & validation** : upload multi-fichiers, extraction de métadonnées, contrôles de cohérence.
 2. **Analyse IA** : OCR, détection d’objets, extraction de texte structuré, scoring de risque.
 3. **Générateur de rapport** : compilation des anomalies, recommandations, synthèse graphique, export PDF.
-4. **Cartographie** : projection géolocalisée, heatmap et filtres par catégorie/sevérité.
-5. **Assistant** : interface chat, requêtes naturelles sur les résultats, rappels de méthodologie.
-6. **Traçabilité** : hachage, ancrage blockchain, vérification d’intégrité à la consultation.
-7. **Administration** : gestion des audits, utilisateurs, rôles, historiques.
+4. **Traçabilité** : hachage d'audit et de lots
+
+### Modules non fonctionnels au partiellement implementé
+1. **Cartographie** : projection géolocalisée, heatmap et filtres par catégorie/sevérité.
+3. **Assistant Conversationnel** : interface chat, requêtes naturelles sur les résultats, rappels de méthodologie.
+4. **Traçabilité** : ancrage blockchain, vérification d’intégrité à la consultation.
+5. **Administration** : gestion des audits, utilisateurs, rôles, historiques.
 
 ---
 
@@ -63,8 +66,8 @@ Le document `docs/Documentation Technique/Audex_Architecture_Technique_et_Concep
 ---
 
 ### Roadmap technique (résumé)
-- **MVP** : pipeline complet d’analyse, rapport automatique, UI React offline-first, authentification JWT/RBAC, ancrage blockchain basique.
-- **Pilote** : synchronisation différée, analyse approfondie de logs IT, API d’intégration partenaires, tests utilisateurs.
+- **MVP** : pipeline complet d’analyse, rapport automatique, UI React offline-first.
+- **Pilote** : administration, ancrage blockchain avancé, assistant conversationnel, cartographie, synchronisation différée, analyse approfondie de logs IT, API d’intégration partenaires, tests utilisateurs.
 - **Production** : version mobile, monitoring/observabilité, migrations vers PostgreSQL et stockage objet, durcissement sécurité.
 
 ---
